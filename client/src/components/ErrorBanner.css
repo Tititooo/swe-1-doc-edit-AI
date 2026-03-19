@@ -1,0 +1,54 @@
+.error-banner {
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  animation: slideIn 0.3s ease;
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.banner-icon {
+  font-size: 18px;
+}
+
+.banner-message {
+  color: #721c24;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.banner-dismiss {
+  background: none;
+  border: none;
+  color: #721c24;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.banner-dismiss:hover {
+  background-color: rgba(114, 28, 36, 0.1);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

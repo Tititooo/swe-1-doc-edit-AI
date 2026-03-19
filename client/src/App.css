@@ -1,0 +1,135 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #ffffff;
+}
+
+/* Header */
+.app-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px 24px;
+  border-bottom: 2px solid #e0e0e0;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-content {
+  flex: 1;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+/* Main Content */
+.app-main {
+  flex: 1;
+  overflow: hidden;
+  padding: 20px;
+  background-color: #f5f7fa;
+}
+
+.placeholder-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  text-align: center;
+  color: #666;
+}
+
+.placeholder-icon {
+  font-size: 80px;
+  opacity: 0.5;
+}
+
+.placeholder-state h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #333;
+}
+
+.placeholder-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Editor Layout */
+.editor-layout {
+  display: flex;
+  gap: 0;
+  height: 100%;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.editor-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Footer */
+.app-footer {
+  background-color: #f5f5f5;
+  border-top: 1px solid #ddd;
+  padding: 12px 24px;
+  text-align: right;
+  font-size: 12px;
+  color: #999;
+}
+
+.version-info {
+  font-weight: 600;
+  color: #666;
+}
+
+/* Error & Conflict Banners */
+.error-banner,
+.conflict-banner {
+  margin: 12px 20px 0 20px;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .editor-layout {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-header h1 {
+    font-size: 20px;
+  }
+
+  .app-main {
+    padding: 12px;
+  }
+
+  .editor-layout {
+    flex-direction: column;
+  }
+}
