@@ -49,17 +49,6 @@ C4 diagrams (context, container, and component levels) are documented in the ful
 
 ---
 
-## Technology Stack
-
-| Layer | Choice | Rationale |
-|---|---|---|
-| Frontend | React + TypeScript | Component model suits rich editor UX; strong typing catches data-contract mismatches early |
-| Editor component | TipTap / ProseMirror | Extensible, headless rich-text engine with good collaboration plugin support |
-| Real-time transport | WebSocket (planned: `ws` or Socket.IO) | Low-latency bidirectional channel required for keystroke-level propagation |
-| Backend API | Node.js + Express (TypeScript) | Shared language with frontend eases type-sharing; large ecosystem |
-| AI integration | OpenAI API (GPT-4o) via server-side proxy | Keeps API keys off the client; allows prompt management and cost control |
-| Database | PostgreSQL | Relational model suits document metadata, permissions, and version history |
-| Auth | JWT + refresh tokens | Stateless verification; easy to propagate through WebSocket handshake |
 
 ---
 
@@ -98,8 +87,7 @@ colab-doc-editor-with-ai/
 ### Prerequisites
 
 - Node.js ≥ 20
-- Docker & Docker Compose (for the database)
-- An OpenAI API key (for AI features)
+
 
 ### 1. Clone the repository
 
@@ -189,4 +177,4 @@ The following are intentionally out of scope for this PoC and will be addressed 
 | *(team member)* | Frontend / Editor |
 | *(team member)* | Backend API / Auth |
 | *(team member)* | Real-time sync layer |
-| *(team member)* | AI integration service |
+| *Temiko* | AI integration service |
