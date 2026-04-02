@@ -174,7 +174,7 @@ The following are intentionally out of scope for this PoC and will be addressed 
 
 | Name | Ownership area |
 |---|---|
-| *(team member)* | Frontend / Editor |
+| *Tanisha Maahira* | Frontend / Editor |
 | *(team member)* | Backend API / Auth |
 | *(team member)* | Real-time sync layer |
 | *Temiko* | AI integration service |
