@@ -1,0 +1,21 @@
+{
+  "name": "collab-editor-collab",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "pg": "^8.11.0",
+    "ws": "^8.16.0",
+    "y-websocket": "^1.5.4",
+    "yjs": "^13.6.15"
+  },
+  "devDependencies": {
+    "ws": "^8.16.0"
+  }
+}
