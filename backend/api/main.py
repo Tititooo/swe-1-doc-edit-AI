@@ -1,0 +1,258 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from sse_starlette.sse import EventSourceResponse
+
+from ai.groq_client import GroqChatClient, GroqClientError
+from ai.service import AIService
+
+from .config import Settings
+from .schemas import (
+    CompatibilityRewriteRequest,
+    CompatibilityRewriteResponse,
+    DocumentResponse,
+    HealthResponse,
+    RestructureRequest,
+    StreamingRewriteRequest,
+    SuggestionEvent,
+    SummarizeRequest,
+    TranslateRequest,
+    UpdateDocumentPayload,
+    VersionResponse,
+)
+from .store import InMemoryDocumentStore, VersionConflictError
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv()
+
+
+def _extract_selection_text(payload: dict[str, Any]) -> str:
+    selection = payload.get("selection")
+    if isinstance(selection, dict):
+        text = selection.get("text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"message": "selection.text is required for streaming AI requests", "code": "INVALID_REQUEST"},
+    )
+
+
+def _extract_compat_text(payload: CompatibilityRewriteRequest) -> str:
+    if payload.feature == "continue":
+        if payload.documentText and payload.documentText.strip():
+            return payload.documentText.strip()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "documentText is required for continue mode", "code": "INVALID_REQUEST"},
+        )
+
+    if payload.selectedText.strip():
+        return payload.selectedText.strip()
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"message": "selectedText is required for this AI action", "code": "INVALID_REQUEST"},
+    )
+
+
+def create_app() -> FastAPI:
+    settings = Settings.from_env()
+    store = InMemoryDocumentStore()
+    ai_service = AIService(GroqChatClient(settings))
+
+    app = FastAPI(title="Collab Editor API", version="0.1.0")
+    app.state.settings = settings
+    app.state.store = store
+    app.state.ai_service = ai_service
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins or ["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.exception_handler(HTTPException)
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(_request: Request, exc: HTTPException | StarletteHTTPException):
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        if "message" not in detail:
+            detail["message"] = "Request failed."
+        return JSONResponse(status_code=exc.status_code, content=detail)
+
+    def get_store(request: Request) -> InMemoryDocumentStore:
+        return request.app.state.store
+
+    def get_ai_service(request: Request) -> AIService:
+        return request.app.state.ai_service
+
+    @app.get("/health", response_model=HealthResponse)
+    async def health(request: Request) -> HealthResponse:
+        state_settings: Settings = request.app.state.settings
+        state_ai_service = get_ai_service(request)
+        return HealthResponse(
+            status="ok",
+            service="collab-editor-backend",
+            groq_configured=state_ai_service.configured,
+            database_configured=bool(state_settings.database_url),
+            timestamp=datetime.now(timezone.utc),
+        )
+
+    @app.get("/api/document", response_model=DocumentResponse)
+    async def get_document(request: Request) -> DocumentResponse:
+        return await get_store(request).get_document()
+
+    @app.put("/api/document", response_model=DocumentResponse)
+    async def put_document(payload: UpdateDocumentPayload, request: Request) -> DocumentResponse:
+        try:
+            return await get_store(request).update_document(payload.content, payload.versionId)
+        except VersionConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"message": str(exc), "code": "VERSION_CONFLICT"},
+            ) from exc
+
+    @app.get("/api/document/version", response_model=VersionResponse)
+    async def get_document_version(request: Request) -> VersionResponse:
+        return VersionResponse(versionId=await get_store(request).get_version())
+
+    @app.put("/api/documents/{doc_id}", response_model=DocumentResponse)
+    async def update_document_by_id(doc_id: str, payload: UpdateDocumentPayload, request: Request) -> DocumentResponse:
+        current = await get_store(request).get_document_by_id(doc_id)
+        if current.versionId != payload.versionId:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"message": "Version conflict.", "code": "VERSION_CONFLICT"},
+            )
+        return await get_store(request).update_document(payload.content, payload.versionId)
+
+    @app.get("/api/documents/{doc_id}", response_model=DocumentResponse)
+    async def get_document_by_id(doc_id: str, request: Request) -> DocumentResponse:
+        try:
+            return await get_store(request).get_document_by_id(doc_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+
+    async def stream_feature(feature: str, payload: dict[str, Any], request: Request) -> EventSourceResponse:
+        state_ai_service = get_ai_service(request)
+        selected_text = _extract_selection_text(payload)
+        kwargs: dict[str, Any] = {}
+        if feature == "rewrite":
+            kwargs["style"] = payload.get("style")
+        elif feature == "translate":
+            kwargs["target_lang"] = payload.get("target_lang")
+        elif feature == "restructure":
+            kwargs["instructions"] = payload.get("instructions")
+
+        try:
+            handle, iterator = await state_ai_service.stream_feature(feature, selected_text, **kwargs)
+        except GroqClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"message": str(exc), "code": "AI_SERVICE_UNAVAILABLE"},
+            ) from exc
+
+        async def event_generator():
+            try:
+                async for token in iterator:
+                    event = SuggestionEvent(
+                        token=token,
+                        done=False,
+                        suggestion_id=handle.suggestion_id,
+                        feature=feature,
+                    )
+                    yield {"event": "token", "data": event.model_dump_json()}
+                done_event = SuggestionEvent(
+                    token="",
+                    done=True,
+                    suggestion_id=handle.suggestion_id,
+                    feature=feature,
+                )
+                yield {"event": "done", "data": done_event.model_dump_json()}
+            except GroqClientError as exc:
+                error_event = {
+                    "event": "error",
+                    "data": json.dumps(
+                        {"message": str(exc), "code": "AI_SERVICE_UNAVAILABLE", "suggestion_id": handle.suggestion_id}
+                    ),
+                }
+                yield error_event
+
+        return EventSourceResponse(event_generator())
+
+    @app.post("/api/ai/rewrite")
+    async def rewrite(request: Request):
+        state_ai_service = get_ai_service(request)
+        body = await request.json()
+
+        if "selectedText" in body:
+            payload = CompatibilityRewriteRequest.model_validate(body)
+            try:
+                selected_text = _extract_compat_text(payload)
+                result = await state_ai_service.complete_feature(
+                    payload.feature,
+                    selected_text,
+                    style=payload.style,
+                    notes=payload.notes,
+                    target_lang=payload.targetLanguage,
+                    instructions=payload.notes,
+                    document_text=payload.documentText,
+                )
+                response = CompatibilityRewriteResponse(success=True, result=result, feature=payload.feature)
+                return JSONResponse(response.model_dump())
+            except GroqClientError as exc:
+                response = CompatibilityRewriteResponse(
+                    success=False,
+                    error=str(exc),
+                    message=str(exc),
+                    feature=payload.feature,
+                )
+                return JSONResponse(response.model_dump(), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        StreamingRewriteRequest.model_validate(body)
+        return await stream_feature("rewrite", body, request)
+
+    @app.post("/api/ai/summarize")
+    async def summarize(request_body: SummarizeRequest, request: Request):
+        return await stream_feature("summarize", request_body.model_dump(), request)
+
+    @app.post("/api/ai/translate")
+    async def translate(request_body: TranslateRequest, request: Request):
+        return await stream_feature("translate", request_body.model_dump(), request)
+
+    @app.post("/api/ai/restructure")
+    async def restructure(request_body: RestructureRequest, request: Request):
+        return await stream_feature("restructure", request_body.model_dump(), request)
+
+    @app.post("/api/ai/cancel/{suggestion_id}")
+    async def cancel_suggestion(suggestion_id: str, request: Request):
+        cancelled = await get_ai_service(request).cancel(suggestion_id)
+        if not cancelled:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Suggestion not found.", "code": "DOCUMENT_NOT_FOUND"},
+            )
+        return {"ok": True, "suggestion_id": suggestion_id}
+
+    @app.post("/api/ai/feedback")
+    async def feedback(payload: dict[str, Any]):
+        return {"ok": True, "received": payload}
+
+    return app
+
+
+app = create_app()

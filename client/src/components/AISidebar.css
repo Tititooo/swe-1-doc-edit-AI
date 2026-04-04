@@ -48,6 +48,22 @@
   word-break: break-word;
 }
 
+.section-input {
+  width: 100%;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  background-color: white;
+  color: #1f2933;
+}
+
+.section-textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
 .selected-text-preview {
   background-color: #f0f7ff;
   border-color: #3498db;

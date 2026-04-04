@@ -25,13 +25,13 @@ export const LoadDocumentButton = ({
     <button
       className="load-button"
       onClick={onLoad}
-      disabled={isLoading || hasDocument}
-      title={hasDocument ? 'Document already loaded' : 'Click to load document'}
+      disabled={isLoading}
+      title={hasDocument ? 'Reload the latest document' : 'Click to load document'}
     >
       {isLoading && (
         <span className="spinner">🔄</span>
       )}
-      {isLoading ? 'Loading...' : hasDocument ? 'Loaded ✓' : 'Load Document'}
+      {isLoading ? 'Loading...' : hasDocument ? 'Reload Document' : 'Load Document'}
     </button>
   )
 }

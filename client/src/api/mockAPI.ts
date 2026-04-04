@@ -4,7 +4,7 @@
  * Replace with real API calls once backend is ready
  */
 
-import { Document, AIRewriteResponse, APIError } from '../types/document'
+import { AIRewriteRequest, AIRewriteResponse, Document } from '../types/document'
 
 // Simulated server state
 let serverDocument: Document = {
@@ -61,26 +61,38 @@ export const mockUpdateDocument = async (
  * Mock: Request AI rewrite
  * Simulates AI service rewriting selected text
  */
-export const mockRequestAIRewrite = async (selectedText: string): Promise<AIRewriteResponse> => {
+export const mockRequestAIRewrite = async (request: AIRewriteRequest): Promise<AIRewriteResponse> => {
   await delay(MOCK_DELAY + 1000) // AI takes longer
 
-  if (!selectedText.trim()) {
+  const feature = request.feature || 'rewrite'
+  const selectedText = request.selectedText.trim()
+  const documentText = request.documentText?.trim() || ''
+
+  if (!selectedText && feature !== 'continue') {
     return {
       success: false,
-      error: 'No text provided for rewriting',
+      error: 'No text provided for the requested AI action',
     }
   }
 
-  // Simple mock: capitalize and add "enhanced" version
-  const rewritten = selectedText
-    .split('.')
-    .map((sentence) => sentence.trim() + '.')
-    .join(' ')
-    .trim()
+  let result: string
+
+  if (feature === 'summarize') {
+    result = `Summary: ${selectedText.slice(0, 80)}`
+  } else if (feature === 'translate') {
+    result = `[${request.targetLanguage || 'English'}] ${selectedText}`
+  } else if (feature === 'restructure') {
+    result = `${selectedText} [Restructured with notes: ${request.notes || 'none'}]`
+  } else if (feature === 'continue') {
+    result = `${documentText || selectedText} ...and then the paragraph continues with more detail.`
+  } else {
+    result = `${selectedText} [Enhanced version${request.style ? `: ${request.style}` : ''}]`
+  }
 
   return {
     success: true,
-    result: `${rewritten} [Enhanced version]`,
+    result,
+    feature,
   }
 }
 

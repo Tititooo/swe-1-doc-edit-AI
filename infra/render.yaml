@@ -100,7 +100,7 @@ services:
     name: collab-editor-frontend
     runtime: static
     region: frankfurt
-    rootDir: frontend
+    rootDir: client
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     headers:

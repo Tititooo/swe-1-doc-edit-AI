@@ -10,6 +10,14 @@ export interface Document {
   title?: string
 }
 
+export interface TextSelection {
+  start: number
+  end: number
+  text: string
+}
+
+export type AIFeature = 'rewrite' | 'summarize' | 'translate' | 'restructure' | 'continue'
+
 export interface AIResponse {
   success: boolean
   result?: string
@@ -31,8 +39,14 @@ export interface UpdateDocumentPayload {
 export interface AIRewriteRequest {
   selectedText: string
   versionId: number
+  feature?: AIFeature
+  style?: string
+  notes?: string
+  targetLanguage?: string
+  documentText?: string
 }
 
 export interface AIRewriteResponse extends AIResponse {
   result?: string
+  feature?: AIFeature
 }

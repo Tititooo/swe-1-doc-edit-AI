@@ -6,6 +6,7 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import {
+  AIFeature,
   Document,
   UpdateDocumentPayload,
   AIRewriteRequest,
@@ -15,10 +16,13 @@ import {
 import * as mockAPI from './mockAPI'
 
 // Initialize axios instance with base URL from env
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
+const mockPreference = import.meta.env.VITE_ENABLE_MOCK_API?.toLowerCase()
 
-// Enable mock mode in development if backend not available
-const MOCK_MODE = import.meta.env.DEV && API_BASE_URL.includes('localhost:3000')
+// Default to mock mode in development unless explicitly disabled.
+const MOCK_MODE = mockPreference
+  ? mockPreference === 'true'
+  : import.meta.env.DEV
 
 const client: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -95,7 +99,7 @@ export const requestAIRewrite = async (
 ): Promise<AIRewriteResponse> => {
   try {
     if (MOCK_MODE) {
-      return await mockAPI.mockRequestAIRewrite(request.selectedText)
+      return await mockAPI.mockRequestAIRewrite(request)
     }
     const response = await client.post<AIRewriteResponse>('/ai/rewrite', request)
     return response.data
@@ -103,6 +107,8 @@ export const requestAIRewrite = async (
     throw handleError(error)
   }
 }
+
+export type { AIFeature }
 
 /**
  * Check server version to detect conflicts

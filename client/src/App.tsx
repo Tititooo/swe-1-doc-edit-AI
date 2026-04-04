@@ -19,42 +19,77 @@ import { AISidebar } from './components/AISidebar'
 import { ConflictWarningBanner } from './components/ConflictWarningBanner'
 import { ErrorBanner } from './components/ErrorBanner'
 import { updateDocument } from './api/documentAPI'
+import { APIError, TextSelection } from './types/document'
+import type { AIRequestOptions } from './hooks/useAI'
 import './App.css'
 
 function App() {
   // State management hooks
-  const { document, content, versionId, loading, error: docError, loadDocument, setContent } = useDocument()
-  const { aiResponse, aiLoading, aiError, requestRewrite, clearError: clearAIError, reset: resetAI } = useAI()
+  const {
+    document,
+    content,
+    versionId,
+    loading,
+    error: docError,
+    loadDocument,
+    setContent,
+    syncDocument,
+    clearError: clearDocumentError,
+  } = useDocument()
+  const {
+    aiResponse,
+    aiLoading,
+    aiError,
+    activeFeature,
+    requestRewrite,
+    clearError: clearAIError,
+    reset: resetAI,
+  } = useAI()
   const { hasConflict, conflictMessage, checkConflict, clearConflict } = useVersionConflict()
 
   // Local state for UI
-  const [selectedText, setSelectedText] = useState('')
-  const [showErrorBanner, setShowErrorBanner] = useState(false)
+  const [selection, setSelection] = useState<TextSelection | null>(null)
+  const [localErrorMessage, setLocalErrorMessage] = useState<string | null>(null)
   const [isUpdateLoading, setIsUpdateLoading] = useState(false)
+  const selectedText = selection?.text || ''
 
   // Show error banner when document or AI errors occur
-  const activeError = docError || aiError
-  const activeErrorMessage = activeError
-    ? activeError.message || 'An unexpected error occurred'
-    : ''
+  const activeErrorMessage =
+    localErrorMessage ||
+    docError?.message ||
+    aiError?.message ||
+    null
 
   const handleLoadDocument = useCallback(async () => {
+    setSelection(null)
+    setLocalErrorMessage(null)
+    clearConflict()
     await loadDocument()
     resetAI()
-  }, [loadDocument, resetAI])
+  }, [clearConflict, loadDocument, resetAI])
 
-  const handleSelectText = useCallback((text: string) => {
-    setSelectedText(text)
+  const handleSelectText = useCallback((nextSelection: TextSelection | null) => {
+    setSelection(nextSelection)
   }, [])
 
-  const handleRewrite = useCallback(async () => {
-    await requestRewrite(selectedText, versionId)
-  }, [selectedText, versionId, requestRewrite])
+  const handleRewrite = useCallback(
+    async (options: AIRequestOptions) => {
+      const continueContext = options.feature === 'continue'
+        ? content.slice(Math.max(0, content.length - 600))
+        : options.documentText
+
+      await requestRewrite(selectedText, versionId, {
+        ...options,
+        documentText: continueContext,
+      })
+    },
+    [content, requestRewrite, selectedText, versionId]
+  )
 
   const handleApplyRewrite = useCallback(
     async (newText: string) => {
-      if (!versionId) {
-        setShowErrorBanner(true)
+      if (versionId === null) {
+        setLocalErrorMessage('Load a document before applying an AI result.')
         return
       }
 
@@ -65,45 +100,52 @@ function App() {
       }
 
       // Replace selected text with new text
-      const beforeSelection = content.substring(0, content.indexOf(selectedText))
-      const afterSelection = content.substring(
-        content.indexOf(selectedText) + selectedText.length
-      )
-      const updatedContent = beforeSelection + newText + afterSelection
+      const updatedContent = selection
+        ? content.slice(0, selection.start) + newText + content.slice(selection.end)
+        : `${content.trimEnd()}\n\n${newText}`.trim()
 
       // Update document on server
       setIsUpdateLoading(true)
+      setLocalErrorMessage(null)
       try {
-        await updateDocument({
+        const updatedDocument = await updateDocument({
           content: updatedContent,
           versionId,
         })
 
         // Update local state
-        setContent(updatedContent)
+        syncDocument(updatedDocument)
+        clearConflict()
         resetAI()
-        setSelectedText('')
+        setSelection(null)
       } catch (err) {
         console.error('Failed to update document:', err)
-        setShowErrorBanner(true)
+        const error = err as APIError
+        setLocalErrorMessage(error.message || 'Failed to update document.')
       } finally {
         setIsUpdateLoading(false)
       }
     },
-    [content, selectedText, versionId, checkConflict, setContent, resetAI]
+    [checkConflict, clearConflict, content, resetAI, selection, syncDocument, versionId]
   )
 
   const handleTextChange = useCallback(
     (newContent: string) => {
+      if (selection) {
+        setSelection(null)
+        resetAI()
+        clearConflict()
+      }
       setContent(newContent)
     },
-    [setContent]
+    [clearConflict, resetAI, selection, setContent]
   )
 
   const handleDismissError = useCallback(() => {
-    setShowErrorBanner(false)
+    setLocalErrorMessage(null)
+    clearDocumentError()
     clearAIError()
-  }, [clearAIError])
+  }, [clearAIError, clearDocumentError])
 
   const handleDismissConflict = useCallback(() => {
     clearConflict()
@@ -126,8 +168,8 @@ function App() {
 
       {/* Error Banner (US-05) */}
       <ErrorBanner
-        visible={showErrorBanner || !!activeError}
-        message={activeErrorMessage}
+        visible={!!activeErrorMessage}
+        message={activeErrorMessage || undefined}
         onDismiss={handleDismissError}
       />
 
@@ -162,7 +204,9 @@ function App() {
             {/* AI Sidebar (US-03) */}
             <AISidebar
               selectedText={selectedText}
+              documentText={content}
               aiResponse={aiResponse}
+              activeFeature={activeFeature}
               isLoading={aiLoading}
               onRewrite={handleRewrite}
               onApply={handleApplyRewrite}
