@@ -4,9 +4,9 @@
  * Handles: US-03 (AI Assistance/Rewrite)
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { AIRewriteResponse, APIError, AIRewriteRequest, AIFeature } from '../types/document'
-import { requestAIRewrite } from '../api/documentAPI'
+import { cancelAISuggestion, requestAIRewrite, streamAIAction } from '../api/documentAPI'
 
 export interface AIRequestOptions {
   feature: AIFeature
@@ -21,7 +21,9 @@ interface UseAIReturn {
   aiLoading: boolean
   aiError: APIError | null
   activeFeature: AIFeature
+  cancelRequest: () => Promise<void>
   requestRewrite: (
+    documentId: string | null,
     selectedText: string,
     versionId: number | null,
     options: AIRequestOptions
@@ -35,14 +37,35 @@ export const useAI = (): UseAIReturn => {
   const [aiLoading, setAILoading] = useState(false)
   const [aiError, setAIError] = useState<APIError | null>(null)
   const [activeFeature, setActiveFeature] = useState<AIFeature>('rewrite')
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const suggestionIdRef = useRef<string | null>(null)
+
+  const cancelRequest = useCallback(async () => {
+    abortControllerRef.current?.abort()
+
+    if (suggestionIdRef.current) {
+      try {
+        await cancelAISuggestion(suggestionIdRef.current)
+      } catch {
+        // Best-effort cancel; local abort already happened.
+      }
+    }
+
+    suggestionIdRef.current = null
+    abortControllerRef.current = null
+    setAILoading(false)
+    setAIResponse(null)
+    setAIError(null)
+  }, [])
 
   const requestRewrite = useCallback(
     async (
+      documentId: string | null,
       selectedText: string,
       versionId: number | null,
       options: AIRequestOptions
     ) => {
-      if (versionId === null) {
+      if (versionId === null || documentId === null) {
         setAIError({
           message: 'Document not loaded',
         })
@@ -60,28 +83,58 @@ export const useAI = (): UseAIReturn => {
       setAIError(null)
       setAIResponse(null)
       setActiveFeature(options.feature)
+      suggestionIdRef.current = null
 
       try {
-        const request: AIRewriteRequest = {
-          selectedText,
-          versionId,
-          feature: options.feature,
-          style: options.style,
-          notes: options.notes,
-          targetLanguage: options.targetLanguage,
-          documentText: options.documentText,
-        }
-        const response: AIRewriteResponse = await requestAIRewrite(request)
+        if (options.feature === 'continue') {
+          const request: AIRewriteRequest = {
+            selectedText,
+            versionId,
+            feature: options.feature,
+            style: options.style,
+            notes: options.notes,
+            targetLanguage: options.targetLanguage,
+            documentText: options.documentText,
+          }
+          const response: AIRewriteResponse = await requestAIRewrite(request)
 
-        if (response.success && response.result) {
-          setAIResponse(response.result)
+          if (response.success && response.result) {
+            setAIResponse(response.result)
+          } else {
+            throw new Error(response.error || 'AI service returned an error')
+          }
         } else {
-          throw new Error(response.error || 'AI service returned an error')
+          const controller = new AbortController()
+          abortControllerRef.current = controller
+          setAIResponse('')
+
+          await streamAIAction({
+            feature: options.feature,
+            docId: documentId,
+            selectedText,
+            style: options.style,
+            notes: options.notes,
+            targetLanguage: options.targetLanguage,
+            signal: controller.signal,
+            onToken: (token, suggestionId) => {
+              if (suggestionId) {
+                suggestionIdRef.current = suggestionId
+              }
+              setAIResponse((prev) => `${prev || ''}${token}`)
+            },
+          })
         }
       } catch (err) {
-        setAIError(err as APIError)
-        setAIResponse(null)
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setAIResponse(null)
+          setAIError(null)
+        } else {
+          setAIError(err as APIError)
+          setAIResponse(null)
+        }
       } finally {
+        abortControllerRef.current = null
+        suggestionIdRef.current = null
         setAILoading(false)
       }
     },
@@ -97,6 +150,8 @@ export const useAI = (): UseAIReturn => {
     setAIError(null)
     setAILoading(false)
     setActiveFeature('rewrite')
+    abortControllerRef.current = null
+    suggestionIdRef.current = null
   }, [])
 
   return {
@@ -104,6 +159,7 @@ export const useAI = (): UseAIReturn => {
     aiLoading,
     aiError,
     activeFeature,
+    cancelRequest,
     requestRewrite,
     clearError,
     reset,

@@ -15,6 +15,19 @@ import {
 } from '../types/document'
 import * as mockAPI from './mockAPI'
 
+type StreamableFeature = Exclude<AIFeature, 'continue'>
+
+interface StreamAIActionRequest {
+  feature: StreamableFeature
+  docId: string
+  selectedText: string
+  style?: string
+  notes?: string
+  targetLanguage?: string
+  signal?: AbortSignal
+  onToken: (token: string, suggestionId?: string) => void
+}
+
 // Initialize axios instance with base URL from env
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
 const mockPreference = import.meta.env.VITE_ENABLE_MOCK_API?.toLowerCase()
@@ -109,6 +122,104 @@ export const requestAIRewrite = async (
 }
 
 export type { AIFeature }
+
+export const streamAIAction = async ({
+  feature,
+  docId,
+  selectedText,
+  style,
+  notes,
+  targetLanguage,
+  signal,
+  onToken,
+}: StreamAIActionRequest): Promise<{ suggestionId?: string }> => {
+  const endpointMap: Record<StreamableFeature, string> = {
+    rewrite: '/ai/rewrite',
+    summarize: '/ai/summarize',
+    translate: '/ai/translate',
+    restructure: '/ai/restructure',
+  }
+
+  const body =
+    feature === 'rewrite'
+      ? { doc_id: docId, selection: { text: selectedText }, style: style || notes || undefined }
+      : feature === 'summarize'
+        ? { doc_id: docId, selection: { text: selectedText } }
+        : feature === 'translate'
+          ? { doc_id: docId, selection: { text: selectedText }, target_lang: targetLanguage || 'English' }
+          : { doc_id: docId, selection: { text: selectedText }, instructions: notes || 'Improve structure.' }
+
+  const response = await fetch(`${API_BASE_URL}${endpointMap[feature]}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    let message = 'AI streaming request failed'
+    try {
+      const errorBody = await response.json()
+      message = errorBody.message || message
+    } catch {
+      // Ignore JSON parse failure and use fallback message.
+    }
+    throw { message, status: response.status } satisfies APIError
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let latestSuggestionId: string | undefined
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() || ''
+
+    for (const rawEvent of events) {
+      const lines = rawEvent.split('\n').filter(Boolean)
+      const eventLine = lines.find((line) => line.startsWith('event:'))
+      const dataLine = lines.find((line) => line.startsWith('data:'))
+      if (!eventLine || !dataLine) continue
+
+      const eventName = eventLine.replace('event:', '').trim()
+      const data = JSON.parse(dataLine.replace('data:', '').trim()) as {
+        token?: string
+        done?: boolean
+        suggestion_id?: string
+        message?: string
+      }
+
+      if (data.suggestion_id) {
+        latestSuggestionId = data.suggestion_id
+      }
+
+      if (eventName === 'error') {
+        throw { message: data.message || 'AI streaming failed' } satisfies APIError
+      }
+
+      if (eventName === 'token' && data.token) {
+        onToken(data.token, latestSuggestionId)
+      }
+    }
+  }
+
+  return { suggestionId: latestSuggestionId }
+}
+
+export const cancelAISuggestion = async (suggestionId: string): Promise<void> => {
+  try {
+    await client.post(`/ai/cancel/${suggestionId}`)
+  } catch (error) {
+    throw handleError(error)
+  }
+}
 
 /**
  * Check server version to detect conflicts

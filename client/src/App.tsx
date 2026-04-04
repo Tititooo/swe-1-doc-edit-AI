@@ -41,6 +41,7 @@ function App() {
     aiLoading,
     aiError,
     activeFeature,
+    cancelRequest,
     requestRewrite,
     clearError: clearAIError,
     reset: resetAI,
@@ -78,12 +79,12 @@ function App() {
         ? content.slice(Math.max(0, content.length - 600))
         : options.documentText
 
-      await requestRewrite(selectedText, versionId, {
+      await requestRewrite(document?.id ?? null, selectedText, versionId, {
         ...options,
         documentText: continueContext,
       })
     },
-    [content, requestRewrite, selectedText, versionId]
+    [content, document?.id, requestRewrite, selectedText, versionId]
   )
 
   const handleApplyRewrite = useCallback(
@@ -208,6 +209,7 @@ function App() {
               aiResponse={aiResponse}
               activeFeature={activeFeature}
               isLoading={aiLoading}
+              onCancel={cancelRequest}
               onRewrite={handleRewrite}
               onApply={handleApplyRewrite}
               isApplyDisabled={hasConflict || isUpdateLoading}
