@@ -14,9 +14,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TYPE permission_role AS ENUM ('owner', 'editor', 'commenter', 'viewer');
 
-CREATE TYPE ai_feature AS ENUM ('rewrite', 'summarize', 'translate', 'restructure');
+CREATE TYPE ai_feature AS ENUM ('rewrite', 'summarize', 'translate', 'restructure', 'continue');
 
-CREATE TYPE ai_status AS ENUM ('accepted', 'rejected', 'partial', 'cancelled');
+CREATE TYPE ai_status AS ENUM ('generated', 'accepted', 'rejected', 'partial', 'cancelled');
 
 -- =============================================================
 -- USERS

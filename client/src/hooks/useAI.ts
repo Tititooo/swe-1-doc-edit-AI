@@ -6,7 +6,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import { AIRewriteResponse, APIError, AIRewriteRequest, AIFeature } from '../types/document'
-import { cancelAISuggestion, requestAIRewrite, streamAIAction } from '../api/documentAPI'
+import { cancelAISuggestion, requestAIRewrite, sendAIFeedback, streamAIAction } from '../api/documentAPI'
 
 export interface AIRequestOptions {
   feature: AIFeature
@@ -22,6 +22,7 @@ interface UseAIReturn {
   aiError: APIError | null
   activeFeature: AIFeature
   cancelRequest: () => Promise<void>
+  markSuggestion: (action: 'accepted' | 'rejected' | 'partial' | 'cancelled') => Promise<void>
   requestRewrite: (
     documentId: string | null,
     selectedText: string,
@@ -57,6 +58,25 @@ export const useAI = (): UseAIReturn => {
     setAIResponse(null)
     setAIError(null)
   }, [])
+
+  const markSuggestion = useCallback(
+    async (action: 'accepted' | 'rejected' | 'partial' | 'cancelled') => {
+      if (!suggestionIdRef.current) {
+        return
+      }
+
+      try {
+        await sendAIFeedback({
+          suggestionId: suggestionIdRef.current,
+          action,
+        })
+        suggestionIdRef.current = null
+      } catch {
+        // Best-effort feedback; do not block the UI flow.
+      }
+    },
+    []
+  )
 
   const requestRewrite = useCallback(
     async (
@@ -99,6 +119,7 @@ export const useAI = (): UseAIReturn => {
           const response: AIRewriteResponse = await requestAIRewrite(request)
 
           if (response.success && response.result) {
+            suggestionIdRef.current = response.suggestionId || null
             setAIResponse(response.result)
           } else {
             throw new Error(response.error || 'AI service returned an error')
@@ -134,7 +155,6 @@ export const useAI = (): UseAIReturn => {
         }
       } finally {
         abortControllerRef.current = null
-        suggestionIdRef.current = null
         setAILoading(false)
       }
     },
@@ -160,6 +180,7 @@ export const useAI = (): UseAIReturn => {
     aiError,
     activeFeature,
     cancelRequest,
+    markSuggestion,
     requestRewrite,
     clearError,
     reset,

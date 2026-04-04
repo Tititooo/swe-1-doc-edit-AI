@@ -42,6 +42,7 @@ class CompatibilityRewriteResponse(BaseModel):
     error: str | None = None
     message: str | None = None
     feature: CompatibilityFeature | None = None
+    suggestionId: str | None = None
 
 
 class SelectionPayload(BaseModel):
@@ -91,3 +92,8 @@ class HealthResponse(BaseModel):
     groq_configured: bool
     database_configured: bool
     timestamp: datetime
+
+
+class FeedbackRequest(BaseModel):
+    suggestion_id: str
+    action: Literal["accepted", "rejected", "partial", "cancelled"]

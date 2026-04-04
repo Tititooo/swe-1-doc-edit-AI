@@ -42,6 +42,7 @@ function App() {
     aiError,
     activeFeature,
     cancelRequest,
+    markSuggestion,
     requestRewrite,
     clearError: clearAIError,
     reset: resetAI,
@@ -116,6 +117,7 @@ function App() {
 
         // Update local state
         syncDocument(updatedDocument)
+        await markSuggestion('accepted')
         clearConflict()
         resetAI()
         setSelection(null)
@@ -151,6 +153,11 @@ function App() {
   const handleDismissConflict = useCallback(() => {
     clearConflict()
   }, [clearConflict])
+
+  const handleRejectSuggestion = useCallback(async () => {
+    await markSuggestion('rejected')
+    resetAI()
+  }, [markSuggestion, resetAI])
 
   return (
     <div className="app-container">
@@ -210,6 +217,7 @@ function App() {
               activeFeature={activeFeature}
               isLoading={aiLoading}
               onCancel={cancelRequest}
+              onReject={handleRejectSuggestion}
               onRewrite={handleRewrite}
               onApply={handleApplyRewrite}
               isApplyDisabled={hasConflict || isUpdateLoading}

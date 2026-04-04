@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, status
@@ -13,13 +14,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from ai.groq_client import GroqChatClient, GroqClientError
+from ai.quota import AIQuotaExceededError, estimate_tokens
 from ai.service import AIService
 
 from .config import Settings
+from .runtime import AppRuntime
 from .schemas import (
     CompatibilityRewriteRequest,
     CompatibilityRewriteResponse,
     DocumentResponse,
+    FeedbackRequest,
     HealthResponse,
     RestructureRequest,
     StreamingRewriteRequest,
@@ -69,11 +73,19 @@ def create_app() -> FastAPI:
     settings = Settings.from_env()
     store = InMemoryDocumentStore()
     ai_service = AIService(GroqChatClient(settings))
+    runtime = AppRuntime(settings)
 
-    app = FastAPI(title="Collab Editor API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await runtime.startup(store)
+        yield
+        await runtime.shutdown()
+
+    app = FastAPI(title="Collab Editor API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.store = store
     app.state.ai_service = ai_service
+    app.state.runtime = runtime
 
     app.add_middleware(
         CORSMiddleware,
@@ -97,15 +109,19 @@ def create_app() -> FastAPI:
     def get_ai_service(request: Request) -> AIService:
         return request.app.state.ai_service
 
+    def get_runtime(request: Request) -> AppRuntime:
+        return request.app.state.runtime
+
     @app.get("/health", response_model=HealthResponse)
     async def health(request: Request) -> HealthResponse:
         state_settings: Settings = request.app.state.settings
+        state_runtime = get_runtime(request)
         state_ai_service = get_ai_service(request)
         return HealthResponse(
             status="ok",
             service="collab-editor-backend",
             groq_configured=state_ai_service.configured,
-            database_configured=bool(state_settings.database_url),
+            database_configured=state_runtime.connected and bool(state_settings.database_url),
             timestamp=datetime.now(timezone.utc),
         )
 
@@ -158,17 +174,33 @@ def create_app() -> FastAPI:
         elif feature == "restructure":
             kwargs["instructions"] = payload.get("instructions")
 
+        interaction_id = None
+        accumulated_text = ""
+        state_runtime = get_runtime(request)
+        estimated_input_tokens = estimate_tokens(selected_text)
         try:
+            await state_runtime.enforce_quota(estimated_input_tokens)
+            interaction_id = await state_runtime.begin_interaction(feature, selected_text)
             handle, iterator = await state_ai_service.stream_feature(feature, selected_text, **kwargs)
+            if interaction_id is not None:
+                handle.suggestion_id = interaction_id
         except GroqClientError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"message": str(exc), "code": "AI_SERVICE_UNAVAILABLE"},
             ) from exc
+        except AIQuotaExceededError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={"message": str(exc), "code": "AI_QUOTA_EXCEEDED"},
+            ) from exc
 
         async def event_generator():
             try:
                 async for token in iterator:
+                    accumulated_text_nonlocal = token
+                    nonlocal accumulated_text
+                    accumulated_text += accumulated_text_nonlocal
                     event = SuggestionEvent(
                         token=token,
                         done=False,
@@ -182,8 +214,15 @@ def create_app() -> FastAPI:
                     suggestion_id=handle.suggestion_id,
                     feature=feature,
                 )
+                await state_runtime.complete_interaction(
+                    interaction_id,
+                    accumulated_text,
+                    estimate_tokens(selected_text, accumulated_text),
+                )
                 yield {"event": "done", "data": done_event.model_dump_json()}
             except GroqClientError as exc:
+                if interaction_id is not None:
+                    await state_runtime.record_feedback(interaction_id, "cancelled")
                 error_event = {
                     "event": "error",
                     "data": json.dumps(
@@ -203,6 +242,9 @@ def create_app() -> FastAPI:
             payload = CompatibilityRewriteRequest.model_validate(body)
             try:
                 selected_text = _extract_compat_text(payload)
+                state_runtime = get_runtime(request)
+                await state_runtime.enforce_quota(estimate_tokens(selected_text))
+                interaction_id = await state_runtime.begin_interaction(payload.feature, selected_text)
                 result = await state_ai_service.complete_feature(
                     payload.feature,
                     selected_text,
@@ -212,7 +254,17 @@ def create_app() -> FastAPI:
                     instructions=payload.notes,
                     document_text=payload.documentText,
                 )
-                response = CompatibilityRewriteResponse(success=True, result=result, feature=payload.feature)
+                await state_runtime.complete_interaction(
+                    interaction_id,
+                    result,
+                    estimate_tokens(selected_text, result),
+                )
+                response = CompatibilityRewriteResponse(
+                    success=True,
+                    result=result,
+                    feature=payload.feature,
+                    suggestionId=interaction_id,
+                )
                 return JSONResponse(response.model_dump())
             except GroqClientError as exc:
                 response = CompatibilityRewriteResponse(
@@ -222,6 +274,14 @@ def create_app() -> FastAPI:
                     feature=payload.feature,
                 )
                 return JSONResponse(response.model_dump(), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+            except AIQuotaExceededError as exc:
+                response = CompatibilityRewriteResponse(
+                    success=False,
+                    error=str(exc),
+                    message=str(exc),
+                    feature=payload.feature,
+                )
+                return JSONResponse(response.model_dump(), status_code=status.HTTP_429_TOO_MANY_REQUESTS)
 
         StreamingRewriteRequest.model_validate(body)
         return await stream_feature("rewrite", body, request)
@@ -241,6 +301,7 @@ def create_app() -> FastAPI:
     @app.post("/api/ai/cancel/{suggestion_id}")
     async def cancel_suggestion(suggestion_id: str, request: Request):
         cancelled = await get_ai_service(request).cancel(suggestion_id)
+        await get_runtime(request).record_feedback(suggestion_id, "cancelled")
         if not cancelled:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -249,8 +310,11 @@ def create_app() -> FastAPI:
         return {"ok": True, "suggestion_id": suggestion_id}
 
     @app.post("/api/ai/feedback")
-    async def feedback(payload: dict[str, Any]):
-        return {"ok": True, "received": payload}
+    async def feedback(payload: FeedbackRequest, request: Request):
+        updated = await get_runtime(request).record_feedback(payload.suggestion_id, payload.action)
+        if not updated:
+            return {"ok": True, "received": payload.model_dump(), "persisted": False}
+        return {"ok": True, "received": payload.model_dump(), "persisted": True}
 
     return app
 

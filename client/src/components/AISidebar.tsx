@@ -16,6 +16,7 @@ interface AISidebarProps {
   activeFeature: AIFeature
   isLoading: boolean
   onCancel: () => Promise<void>
+  onReject: () => Promise<void>
   onRewrite: (options: AIRequestOptions) => Promise<void>
   onApply: (newText: string) => void
   isApplyDisabled: boolean
@@ -28,6 +29,7 @@ export const AISidebar = ({
   activeFeature,
   isLoading,
   onCancel,
+  onReject,
   onRewrite,
   onApply,
   isApplyDisabled,
@@ -176,6 +178,15 @@ export const AISidebar = ({
             disabled={isApplyDisabled || isLoading}
           >
             Apply
+          </button>
+        )}
+
+        {aiResponse && !isLoading && (
+          <button
+            className="btn"
+            onClick={() => void onReject()}
+          >
+            Dismiss
           </button>
         )}
       </div>

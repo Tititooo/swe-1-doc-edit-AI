@@ -45,6 +45,10 @@ class InMemoryDocumentStore:
             last_modified=datetime.now(timezone.utc),
         )
 
+    def set_identity(self, doc_id: str, title: str) -> None:
+        self._document.id = doc_id
+        self._document.title = title
+
     async def get_document(self) -> DocumentResponse:
         async with self._lock:
             return self._document.as_response()

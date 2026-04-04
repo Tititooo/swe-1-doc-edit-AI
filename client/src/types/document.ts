@@ -49,4 +49,5 @@ export interface AIRewriteRequest {
 export interface AIRewriteResponse extends AIResponse {
   result?: string
   feature?: AIFeature
+  suggestionId?: string
 }

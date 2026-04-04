@@ -28,6 +28,11 @@ interface StreamAIActionRequest {
   onToken: (token: string, suggestionId?: string) => void
 }
 
+interface FeedbackPayload {
+  suggestionId: string
+  action: 'accepted' | 'rejected' | 'partial' | 'cancelled'
+}
+
 // Initialize axios instance with base URL from env
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
 const mockPreference = import.meta.env.VITE_ENABLE_MOCK_API?.toLowerCase()
@@ -216,6 +221,17 @@ export const streamAIAction = async ({
 export const cancelAISuggestion = async (suggestionId: string): Promise<void> => {
   try {
     await client.post(`/ai/cancel/${suggestionId}`)
+  } catch (error) {
+    throw handleError(error)
+  }
+}
+
+export const sendAIFeedback = async ({ suggestionId, action }: FeedbackPayload): Promise<void> => {
+  try {
+    await client.post('/ai/feedback', {
+      suggestion_id: suggestionId,
+      action,
+    })
   } catch (error) {
     throw handleError(error)
   }
