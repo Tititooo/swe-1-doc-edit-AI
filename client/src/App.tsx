@@ -16,7 +16,6 @@ import { useVersionConflict } from './hooks/useVersionConflict'
 import { LoadDocumentButton } from './components/LoadDocumentButton'
 import { TextAreaEditor } from './components/TextAreaEditor'
 import { ExperimentalTiptapEditor } from './components/ExperimentalTiptapEditor'
-import { RichSuggestionPreview } from './components/RichSuggestionPreview'
 import { AISidebar } from './components/AISidebar'
 import { ConflictWarningBanner } from './components/ConflictWarningBanner'
 import { ErrorBanner } from './components/ErrorBanner'
@@ -230,14 +229,15 @@ function App() {
                 <>
                   <ExperimentalTiptapEditor
                     content={content}
-                    onChange={handleTextChange}
-                    onSelect={handleSelectText}
-                    disabled={isUpdateLoading}
-                  />
-                  <RichSuggestionPreview
                     selection={selection}
                     aiResponse={aiResponse}
                     activeFeature={activeFeature}
+                    isStreaming={aiLoading}
+                    onChange={handleTextChange}
+                    onSelect={handleSelectText}
+                    onAccept={handleApplyRewrite}
+                    onReject={() => void handleRejectSuggestion()}
+                    disabled={isUpdateLoading}
                   />
                 </>
               )}
