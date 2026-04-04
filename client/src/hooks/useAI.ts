@@ -43,7 +43,6 @@ export const useAI = (): UseAIReturn => {
   const [history, setHistory] = useState<AIHistoryItem[]>([])
   const abortControllerRef = useRef<AbortController | null>(null)
   const suggestionIdRef = useRef<string | null>(null)
-  const lastDocumentIdRef = useRef<string | null>(null)
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -71,7 +70,7 @@ export const useAI = (): UseAIReturn => {
     setAIResponse(null)
     setAIError(null)
     await refreshHistory()
-  }, [])
+  }, [refreshHistory])
 
   const markSuggestion = useCallback(
     async (action: 'accepted' | 'rejected' | 'partial' | 'cancelled') => {
@@ -119,7 +118,6 @@ export const useAI = (): UseAIReturn => {
       setAIResponse(null)
       setActiveFeature(options.feature)
       suggestionIdRef.current = null
-      lastDocumentIdRef.current = documentId
 
       try {
         const controller = new AbortController()
@@ -147,7 +145,13 @@ export const useAI = (): UseAIReturn => {
           setAIResponse(null)
           setAIError(null)
         } else {
-          setAIError(err as APIError)
+          const nextError = err as APIError
+          const unavailable = nextError.status === 429 || nextError.status === 503 || nextError.status === 504
+          setAIError(
+            unavailable
+              ? { ...nextError, message: 'AI is temporarily unavailable. Please retry shortly.' }
+              : nextError
+          )
           setAIResponse(null)
         }
       } finally {
@@ -167,6 +171,7 @@ export const useAI = (): UseAIReturn => {
     setAIError(null)
     setAILoading(false)
     setActiveFeature('rewrite')
+    setHistory([])
     abortControllerRef.current = null
     suggestionIdRef.current = null
   }, [])

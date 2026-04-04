@@ -1,20 +1,20 @@
 /**
- * API client for document operations
- * Wraps HTTP calls to backend REST endpoints
- * Supports mock mode for local development
+ * API client for document and AI operations.
+ * Keeps mock mode for local development while routing real API calls
+ * through the shared auth-aware HTTP layer.
  */
 
-import axios, { AxiosInstance, AxiosError } from 'axios'
-import {
+import type {
   AIFeature,
-  Document,
-  UpdateDocumentPayload,
+  AIHistoryItem,
   AIRewriteRequest,
   AIRewriteResponse,
-  AIHistoryItem,
   APIError,
+  Document,
+  UpdateDocumentPayload,
 } from '../types/document'
 import * as mockAPI from './mockAPI'
+import { API_BASE_URL, MOCK_MODE, apiClient, authorizedFetch, handleAPIError } from './client'
 
 type StreamableFeature = AIFeature
 
@@ -34,96 +34,44 @@ interface FeedbackPayload {
   action: 'accepted' | 'rejected' | 'partial' | 'cancelled'
 }
 
-// Initialize axios instance with base URL from env
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
-const mockPreference = import.meta.env.VITE_ENABLE_MOCK_API?.toLowerCase()
-
-// Default to mock mode in development unless explicitly disabled.
-const MOCK_MODE = mockPreference
-  ? mockPreference === 'true'
-  : import.meta.env.DEV
-
-const client: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
-
-/**
- * Helper to parse API errors into APIError format
- */
-const handleError = (error: unknown): APIError => {
-  if (axios.isAxiosError(error)) {
-    const axiosError = error as AxiosError<{ message?: string }>
-    return {
-      message: axiosError.response?.data?.message || error.message,
-      code: axiosError.code,
-      status: axiosError.response?.status,
-    }
-  }
-
-  if (error instanceof Error) {
-    return {
-      message: error.message,
-    }
-  }
-
-  return {
-    message: 'An unknown error occurred',
-  }
+interface HistoryFilters {
+  feature?: string
+  status?: string
 }
 
-/**
- * Fetch document content from server
- * GET /document
- */
 export const fetchDocument = async (): Promise<Document> => {
   try {
     if (MOCK_MODE) {
       return await mockAPI.mockFetchDocument()
     }
-    const response = await client.get<Document>('/document')
+    const response = await apiClient.get<Document>('/document')
     return response.data
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
-/**
- * Update document content on server
- * PUT /document
- */
-export const updateDocument = async (
-  payload: UpdateDocumentPayload
-): Promise<Document> => {
+export const updateDocument = async (payload: UpdateDocumentPayload): Promise<Document> => {
   try {
     if (MOCK_MODE) {
       return await mockAPI.mockUpdateDocument(payload.content, payload.versionId)
     }
-    const response = await client.put<Document>('/document', payload)
+    const response = await apiClient.put<Document>('/document', payload)
     return response.data
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
-/**
- * Request AI rewrite of selected text
- * POST /ai/rewrite
- */
-export const requestAIRewrite = async (
-  request: AIRewriteRequest
-): Promise<AIRewriteResponse> => {
+export const requestAIRewrite = async (request: AIRewriteRequest): Promise<AIRewriteResponse> => {
   try {
     if (MOCK_MODE) {
       return await mockAPI.mockRequestAIRewrite(request)
     }
-    const response = await client.post<AIRewriteResponse>('/ai/rewrite', request)
+    const response = await apiClient.post<AIRewriteResponse>('/ai/rewrite', request)
     return response.data
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
@@ -158,7 +106,7 @@ export const streamAIAction = async ({
             ? { doc_id: docId, selection: { text: selectedText }, instructions: notes || 'Improve structure.' }
             : { doc_id: docId, selection: { text: selectedText }, notes: notes || undefined }
 
-  const response = await fetch(`${API_BASE_URL}${endpointMap[feature]}`, {
+  const response = await authorizedFetch(`${API_BASE_URL}${endpointMap[feature]}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -170,10 +118,10 @@ export const streamAIAction = async ({
   if (!response.ok || !response.body) {
     let message = 'AI streaming request failed'
     try {
-      const errorBody = await response.json()
+      const errorBody = (await response.json()) as { message?: string }
       message = errorBody.message || message
     } catch {
-      // Ignore JSON parse failure and use fallback message.
+      // Ignore parse failures and keep the fallback message.
     }
     throw { message, status: response.status } satisfies APIError
   }
@@ -183,9 +131,14 @@ export const streamAIAction = async ({
   let buffer = ''
   let latestSuggestionId: string | undefined
 
-  while (true) {
+  let streaming = true
+
+  while (streaming) {
     const { value, done } = await reader.read()
-    if (done) break
+    if (done) {
+      streaming = false
+      continue
+    }
 
     buffer += decoder.decode(value, { stream: true })
     const events = buffer.split('\n\n')
@@ -200,7 +153,6 @@ export const streamAIAction = async ({
       const eventName = eventLine.replace('event:', '').trim()
       const data = JSON.parse(dataLine.replace('data:', '').trim()) as {
         token?: string
-        done?: boolean
         suggestion_id?: string
         message?: string
       }
@@ -224,48 +176,48 @@ export const streamAIAction = async ({
 
 export const cancelAISuggestion = async (suggestionId: string): Promise<void> => {
   try {
-    await client.post(`/ai/cancel/${suggestionId}`)
+    await apiClient.post(`/ai/cancel/${suggestionId}`)
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
 export const sendAIFeedback = async ({ suggestionId, action }: FeedbackPayload): Promise<void> => {
   try {
-    await client.post('/ai/feedback', {
+    await apiClient.post('/ai/feedback', {
       suggestion_id: suggestionId,
       action,
     })
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
-export const fetchAIHistory = async (limit = 10): Promise<AIHistoryItem[]> => {
+export const fetchAIHistory = async (limit = 10, filters: HistoryFilters = {}): Promise<AIHistoryItem[]> => {
   try {
-    const response = await client.get<AIHistoryItem[]>('/ai/history', {
-      params: { limit },
+    const response = await apiClient.get<AIHistoryItem[]>('/ai/history', {
+      params: {
+        limit,
+        feature: filters.feature,
+        status: filters.status,
+      },
     })
     return response.data
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
-/**
- * Check server version to detect conflicts
- * GET /document/version
- */
 export const checkDocumentVersion = async (): Promise<{ versionId: number }> => {
   try {
     if (MOCK_MODE) {
       return await mockAPI.mockCheckDocumentVersion()
     }
-    const response = await client.get<{ versionId: number }>('/document/version')
+    const response = await apiClient.get<{ versionId: number }>('/document/version')
     return response.data
   } catch (error) {
-    throw handleError(error)
+    throw handleAPIError(error)
   }
 }
 
-export default client
+export default apiClient

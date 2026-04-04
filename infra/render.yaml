@@ -57,6 +57,12 @@ services:
         value: "50000"
       - key: AI_PER_REQUEST_TOKEN_CAP
         value: "4000"
+      - key: AI_REQUIRE_AUTH
+        value: "true"
+      - key: DEV_BOOTSTRAP_EMAIL
+        value: temiko.dev@local
+      - key: DEV_BOOTSTRAP_PASSWORD
+        value: temiko-preview-pass
       - key: CORS_ORIGINS
         value: https://collab-editor-frontend.onrender.com
       - key: PYTHON_VERSION
@@ -87,7 +93,7 @@ services:
           type: web
           property: JWT_SECRET    # Share the same secret as the backend
       - key: COLLAB_SYSTEM_USER_ID
-        sync: false               # Set to a real UUID from your users table
+        value: 00000000-0000-0000-0000-000000000001
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
@@ -121,4 +127,8 @@ services:
         value: https://collab-editor-backend.onrender.com
       - key: VITE_COLLAB_WS_URL
         value: wss://collab-editor-collab.onrender.com
+      - key: VITE_ENABLE_MOCK_API
+        value: "false"
+      - key: VITE_DEV_AUTOLOGIN
+        value: "false"
         
