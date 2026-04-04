@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import type { TextSelection } from '../types/document'
 
 interface ExperimentalTiptapEditorProps {
   content: string
   onChange: (content: string) => void
+  onSelect: (selection: TextSelection | null) => void
   disabled?: boolean
 }
 
@@ -17,6 +19,7 @@ const toParagraphs = (text: string) =>
 export const ExperimentalTiptapEditor = ({
   content,
   onChange,
+  onSelect,
   disabled = false,
 }: ExperimentalTiptapEditorProps) => {
   const editor = useEditor({
@@ -29,6 +32,21 @@ export const ExperimentalTiptapEditor = ({
     content: toParagraphs(content),
     onUpdate: ({ editor: currentEditor }) => {
       onChange(currentEditor.getText({ blockSeparator: '\n\n' }))
+    },
+    onSelectionUpdate: ({ editor: currentEditor }) => {
+      const { from, to } = currentEditor.state.selection
+      if (from === to) {
+        onSelect(null)
+        return
+      }
+
+      const before = currentEditor.state.doc.textBetween(0, from, '\n\n', '\n')
+      const selected = currentEditor.state.doc.textBetween(from, to, '\n\n', '\n')
+      onSelect({
+        start: before.length,
+        end: before.length + selected.length,
+        text: selected,
+      })
     },
   })
 

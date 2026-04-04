@@ -5,8 +5,8 @@
  */
 
 import { useState, useCallback, useRef } from 'react'
-import { AIRewriteResponse, APIError, AIRewriteRequest, AIFeature, AIHistoryItem } from '../types/document'
-import { cancelAISuggestion, fetchAIHistory, requestAIRewrite, sendAIFeedback, streamAIAction } from '../api/documentAPI'
+import { APIError, AIFeature, AIHistoryItem } from '../types/document'
+import { cancelAISuggestion, fetchAIHistory, sendAIFeedback, streamAIAction } from '../api/documentAPI'
 
 export interface AIRequestOptions {
   feature: AIFeature
@@ -90,7 +90,7 @@ export const useAI = (): UseAIReturn => {
         // Best-effort feedback; do not block the UI flow.
       }
     },
-    []
+    [refreshHistory]
   )
 
   const requestRewrite = useCallback(
@@ -122,47 +122,26 @@ export const useAI = (): UseAIReturn => {
       lastDocumentIdRef.current = documentId
 
       try {
-        if (options.feature === 'continue') {
-          const request: AIRewriteRequest = {
-            selectedText,
-            versionId,
-            feature: options.feature,
-            style: options.style,
-            notes: options.notes,
-            targetLanguage: options.targetLanguage,
-            documentText: options.documentText,
-          }
-          const response: AIRewriteResponse = await requestAIRewrite(request)
+        const controller = new AbortController()
+        abortControllerRef.current = controller
+        setAIResponse('')
 
-          if (response.success && response.result) {
-            suggestionIdRef.current = response.suggestionId || null
-            setAIResponse(response.result)
-            await refreshHistory()
-          } else {
-            throw new Error(response.error || 'AI service returned an error')
-          }
-        } else {
-          const controller = new AbortController()
-          abortControllerRef.current = controller
-          setAIResponse('')
-
-          await streamAIAction({
-            feature: options.feature,
-            docId: documentId,
-            selectedText,
-            style: options.style,
-            notes: options.notes,
-            targetLanguage: options.targetLanguage,
-            signal: controller.signal,
-            onToken: (token, suggestionId) => {
-              if (suggestionId) {
-                suggestionIdRef.current = suggestionId
-              }
-              setAIResponse((prev) => `${prev || ''}${token}`)
-            },
-          })
-          await refreshHistory()
-        }
+        await streamAIAction({
+          feature: options.feature,
+          docId: documentId,
+          selectedText: options.feature === 'continue' ? options.documentText || '' : selectedText,
+          style: options.style,
+          notes: options.notes,
+          targetLanguage: options.targetLanguage,
+          signal: controller.signal,
+          onToken: (token, suggestionId) => {
+            if (suggestionId) {
+              suggestionIdRef.current = suggestionId
+            }
+            setAIResponse((prev) => `${prev || ''}${token}`)
+          },
+        })
+        await refreshHistory()
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           setAIResponse(null)
@@ -176,7 +155,7 @@ export const useAI = (): UseAIReturn => {
         setAILoading(false)
       }
     },
-    []
+    [refreshHistory]
   )
 
   const clearError = useCallback(() => {

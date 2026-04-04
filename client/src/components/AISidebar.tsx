@@ -146,6 +146,9 @@ export const AISidebar = ({
               <div key={item.id} style={{ marginBottom: '10px' }}>
                 <strong>{item.feature}</strong> · {item.status}
                 <div>{item.suggestion_text || item.input_text.slice(0, 80)}</div>
+                <div style={{ fontSize: '11px', color: '#667085', marginTop: '4px' }}>
+                  {new Date(item.created_at).toLocaleString()} · {item.tokens_used} tokens
+                </div>
               </div>
             ))}
           </div>

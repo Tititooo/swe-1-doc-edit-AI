@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import asyncpg
 
@@ -138,10 +138,7 @@ class AppRuntime:
 
     async def begin_interaction(self, feature: FeatureName, input_text: str) -> str | None:
         if self._pool is None or self._identity is None:
-            interaction_id = str(UUID(bytes=b"\x00" * 16)).replace(
-                "00000000-0000-0000-0000-000000000000",
-                __import__("uuid").uuid4().hex[:8] + "-0000-0000-0000-000000000000",
-            )
+            interaction_id = str(uuid4())
             self._memory_history.insert(
                 0,
                 {
