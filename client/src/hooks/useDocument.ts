@@ -16,6 +16,9 @@ interface UseDocumentReturn {
   error: APIError | null
   loadDocument: () => Promise<void>
   setContent: (newContent: string) => void
+  syncDocument: (nextDocument: Document) => void
+  clearError: () => void
+  reset: () => void
 }
 
 export const useDocument = (): UseDocumentReturn => {
@@ -43,6 +46,21 @@ export const useDocument = (): UseDocumentReturn => {
     )
   }, [])
 
+  const syncDocument = useCallback((nextDocument: Document) => {
+    setDocument(nextDocument)
+    setError(null)
+  }, [])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
+
+  const reset = useCallback(() => {
+    setDocument(null)
+    setError(null)
+    setLoading(false)
+  }, [])
+
   return {
     document,
     content: document?.content || '',
@@ -51,5 +69,8 @@ export const useDocument = (): UseDocumentReturn => {
     error,
     loadDocument,
     setContent,
+    syncDocument,
+    clearError,
+    reset,
   }
 }

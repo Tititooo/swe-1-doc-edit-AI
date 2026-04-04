@@ -1,34 +1,26 @@
-cat > .gitignore << 'EOF'
-# Environment variables - never commit these
 .env
 *.env
 !.env.example
 
-# Node
-node_modules/
-npm-debug.log*
-
-# Python
 __pycache__/
 *.py[cod]
 *.pyo
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
 
-# Build outputs
+node_modules/
+npm-debug.log*
+
 dist/
 build/
 
-# OS files
 .DS_Store
 Thumbs.db
 
-# IDE
 .vscode/
 .idea/
 
-# Logs
 *.log
 logs/
-EOF

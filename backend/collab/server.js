@@ -94,6 +94,7 @@ const persistenceBound = new Set();
 
 
 wss.on('connection', (ws, req, context) => {
+  const { docName } = context;
   setupWSConnection(ws, req, { docName, gc: true }); // creates ydoc first
 
   if (!persistenceBound.has(docName)) {
