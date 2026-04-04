@@ -18,6 +18,7 @@ interface UseDocumentReturn {
   setContent: (newContent: string) => void
   syncDocument: (nextDocument: Document) => void
   clearError: () => void
+  reset: () => void
 }
 
 export const useDocument = (): UseDocumentReturn => {
@@ -54,6 +55,12 @@ export const useDocument = (): UseDocumentReturn => {
     setError(null)
   }, [])
 
+  const reset = useCallback(() => {
+    setDocument(null)
+    setError(null)
+    setLoading(false)
+  }, [])
+
   return {
     document,
     content: document?.content || '',
@@ -64,5 +71,6 @@ export const useDocument = (): UseDocumentReturn => {
     setContent,
     syncDocument,
     clearError,
+    reset,
   }
 }

@@ -23,6 +23,8 @@ class Settings:
     jwt_algorithm: str
     jwt_access_token_expire_minutes: int
     jwt_refresh_token_expire_days: int
+    dev_bootstrap_email: str
+    dev_bootstrap_password: str
     groq_api_key: str | None
     groq_model: str
     groq_fallback_model: str
@@ -41,6 +43,8 @@ class Settings:
             jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
             jwt_access_token_expire_minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15")),
             jwt_refresh_token_expire_days=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7")),
+            dev_bootstrap_email=os.getenv("DEV_BOOTSTRAP_EMAIL", "temiko.dev@local"),
+            dev_bootstrap_password=os.getenv("DEV_BOOTSTRAP_PASSWORD", "temiko-preview-pass"),
             groq_api_key=os.getenv("GROQ_API_KEY"),
             groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
             groq_fallback_model=os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant"),
