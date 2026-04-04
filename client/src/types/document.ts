@@ -18,6 +18,16 @@ export interface TextSelection {
 
 export type AIFeature = 'rewrite' | 'summarize' | 'translate' | 'restructure' | 'continue'
 
+export interface AIHistoryItem {
+  id: string
+  feature: string
+  input_text: string
+  suggestion_text?: string | null
+  status: string
+  tokens_used: number
+  created_at: string
+}
+
 export interface AIResponse {
   success: boolean
   result?: string

@@ -78,6 +78,12 @@ class RestructureRequest(BaseModel):
     instructions: str = Field(min_length=1)
 
 
+class ContinueRequest(BaseModel):
+    doc_id: str
+    selection: SelectionPayload
+    notes: str | None = None
+
+
 class SuggestionEvent(BaseModel):
     token: str = ""
     done: bool = False
@@ -86,14 +92,53 @@ class SuggestionEvent(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class FeedbackRequest(BaseModel):
+    suggestion_id: str
+    action: Literal["accepted", "rejected", "partial", "cancelled"]
+
+
+class AIHistoryItem(BaseModel):
+    id: str
+    feature: str
+    input_text: str
+    suggestion_text: str | None = None
+    status: str
+    tokens_used: int
+    created_at: str
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
     groq_configured: bool
     database_configured: bool
+    auth_required: bool
     timestamp: datetime
 
 
-class FeedbackRequest(BaseModel):
-    suggestion_id: str
-    action: Literal["accepted", "rejected", "partial", "cancelled"]
+class AuthRequest(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=8)
+
+
+class RegisterRequest(AuthRequest):
+    name: str | None = Field(default=None, min_length=2)
+
+
+class RefreshRequest(BaseModel):
+    refreshToken: str = Field(min_length=1)
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: Literal["owner", "editor", "commenter", "viewer"]
+
+
+class AuthResponse(BaseModel):
+    accessToken: str
+    refreshToken: str
+    user: UserResponse
+    tokenType: Literal["bearer"] = "bearer"
+    expiresIn: int

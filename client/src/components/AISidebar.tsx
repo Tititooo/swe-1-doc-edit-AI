@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useState } from 'react'
-import type { AIFeature } from '../types/document'
+import type { AIFeature, AIHistoryItem } from '../types/document'
 import type { AIRequestOptions } from '../hooks/useAI'
 import './AISidebar.css'
 
@@ -14,6 +14,7 @@ interface AISidebarProps {
   documentText: string
   aiResponse: string | null
   activeFeature: AIFeature
+  history: AIHistoryItem[]
   isLoading: boolean
   onCancel: () => Promise<void>
   onReject: () => Promise<void>
@@ -27,6 +28,7 @@ export const AISidebar = ({
   documentText,
   aiResponse,
   activeFeature,
+  history,
   isLoading,
   onCancel,
   onReject,
@@ -131,7 +133,24 @@ export const AISidebar = ({
         <div className="sidebar-section">
           <label className="section-label">{responseLabel}</label>
           <div className="text-preview rewritten-preview">
-            {aiResponse}
+            {isLoading ? `${aiResponse || ''}▌` : aiResponse}
+          </div>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="sidebar-section">
+          <label className="section-label">Recent AI Activity</label>
+          <div className="text-preview">
+            {history.map((item) => (
+              <div key={item.id} style={{ marginBottom: '10px' }}>
+                <strong>{item.feature}</strong> · {item.status}
+                <div>{item.suggestion_text || item.input_text.slice(0, 80)}</div>
+                <div style={{ fontSize: '11px', color: '#667085', marginTop: '4px' }}>
+                  {new Date(item.created_at).toLocaleString()} · {item.tokens_used} tokens
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

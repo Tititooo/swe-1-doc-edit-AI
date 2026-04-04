@@ -1,50 +1,45 @@
 # Collaborative Document Editor with AI Writing Assistant
 
-This branch adds Temiko's first working backend delivery on top of `origin/main`:
+This branch is the stacked PR3 hardening pass on top of the earlier FastAPI + Groq delivery.
 
-- a new `FastAPI` backend under `backend/api/`
-- a `Groq`-powered AI service under `backend/ai/`
-- compatibility routes for the current React frontend
-- early SSE AI endpoints for the final contract
-- fixes for the upstream collab-server bug and Render frontend path
+## What Works
 
-## Repo Layout
+- FastAPI backend under `backend/api`
+- Groq AI service under `backend/ai`
+- Auth routes:
+  - `POST /api/auth/register`
+  - `POST /api/auth/login`
+  - `POST /api/auth/refresh`
+  - `GET /api/users/me`
+- Compatibility document routes:
+  - `GET /api/document`
+  - `PUT /api/document`
+  - `GET /api/document/version`
+- AI routes:
+  - `POST /api/ai/rewrite`
+  - `POST /api/ai/summarize`
+  - `POST /api/ai/translate`
+  - `POST /api/ai/restructure`
+  - `POST /api/ai/continue`
+  - `POST /api/ai/cancel/:suggestion_id`
+  - `POST /api/ai/feedback`
+  - `GET /api/ai/history`
+- Frontend auth bootstrap, token refresh, streaming AI, cancel, feedback, and history
+
+## Preview Credentials
+
+When auth is enabled, the backend seeds a preview account:
 
 ```text
-.
-├── backend/
-│   ├── api/        # FastAPI compatibility backend
-│   ├── ai/         # Groq prompts and client/service layer
-│   └── collab/     # y-websocket collaboration server
-├── client/         # React frontend
-├── infra/          # schema + Render blueprint
-└── .env.example    # local backend/collab env template
+email: temiko.dev@local
+password: temiko-preview-pass
 ```
 
-## What Works In This Branch
-
-- `GET /api/document`
-- `PUT /api/document`
-- `GET /api/document/version`
-- `POST /api/ai/rewrite`
-  - JSON compatibility mode for the current frontend
-  - SSE streaming mode for the future contract
-- `POST /api/ai/summarize`
-- `POST /api/ai/translate`
-- `POST /api/ai/restructure`
-- `POST /api/ai/cancel/:suggestion_id`
-
-The current frontend can now:
-
-- rewrite text with style presets
-- summarize
-- translate
-- restructure with notes/comments
-- continue writing from the end of the document
+Override `DEV_BOOTSTRAP_EMAIL` and `DEV_BOOTSTRAP_PASSWORD` if you want different preview credentials.
 
 ## Local Setup
 
-### 1. Create the backend env
+### 1. Backend env
 
 ```bash
 cp .env.example .env
@@ -56,7 +51,7 @@ Fill in at least:
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/collab_editor
 JWT_SECRET=<strong-random-secret>
 GROQ_API_KEY=<your-groq-key>
-COLLAB_SYSTEM_USER_ID=<uuid-from-users-table>
+COLLAB_SYSTEM_USER_ID=00000000-0000-0000-0000-000000000001
 ```
 
 ### 2. Start PostgreSQL 16
@@ -76,46 +71,25 @@ Apply the schema:
 docker exec -i collab-editor-db psql -U postgres -d collab_editor < infra/init.sql
 ```
 
-Insert the collab system user:
+Insert the fixed collab system user:
 
 ```bash
 docker exec -it collab-editor-db psql -U postgres -d collab_editor -c \
-"INSERT INTO users (email, hashed_password, name) VALUES ('system@internal', 'n/a', 'System') RETURNING id;"
+"INSERT INTO users (id, email, hashed_password, name) VALUES ('00000000-0000-0000-0000-000000000001', 'system@internal', 'n/a', 'System') ON CONFLICT (email) DO NOTHING;"
 ```
-
-Copy that UUID into `COLLAB_SYSTEM_USER_ID` in `.env`.
 
 ### 3. Install dependencies
 
-Frontend:
-
 ```bash
-cd client
-npm ci
-cd ..
-```
-
-Collab:
-
-```bash
-cd backend/collab
-npm ci
-cd ../..
-```
-
-Backend:
-
-```bash
-cd backend
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
+cd client && npm ci
+cd ../backend/collab && npm ci
+cd ../ && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 cd ..
 ```
 
 ### 4. Run the services
 
-FastAPI:
+Backend:
 
 ```bash
 . backend/.venv/bin/activate
@@ -123,33 +97,36 @@ cd backend
 uvicorn api.main:app --host 127.0.0.1 --port 4000
 ```
 
-Collab server:
+Collab:
 
 ```bash
 cd backend/collab
 npm run dev
 ```
 
-Frontend against the real API:
+Frontend:
 
 ```bash
 cd client
 VITE_API_BASE_URL=http://127.0.0.1:4000/api \
 VITE_ENABLE_MOCK_API=false \
+VITE_DEV_AUTOLOGIN=true \
 npm run dev -- --host 127.0.0.1
 ```
 
+With `VITE_DEV_AUTOLOGIN=false`, sign in with the preview credentials above.
+
 ## Verification
 
-Backend tests:
+Backend:
 
 ```bash
-. backend/.venv/bin/activate
 cd backend
+. .venv/bin/activate
 pytest -q
 ```
 
-Frontend build:
+Frontend:
 
 ```bash
 cd client
@@ -161,14 +138,24 @@ Useful live checks:
 ```bash
 curl http://127.0.0.1:4000/health
 
-curl -X POST http://127.0.0.1:4000/api/ai/rewrite \
+curl -X POST http://127.0.0.1:4000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"selectedText":"The quick brown fox jumps over the lazy dog.","versionId":1}'
+  -d '{"email":"temiko.dev@local","password":"temiko-preview-pass"}'
 ```
+
+## Render Private Preview
+
+`infra/render.yaml` is configured for an auth-enabled private preview on Render.
+
+1. Create the Blueprint app from this branch.
+2. Set `GROQ_API_KEY` on the backend service.
+3. Keep `AI_REQUIRE_AUTH=true` for the deployed preview.
+4. After Postgres is provisioned, insert the fixed collab system user UUID shown above.
+5. Confirm the actual Render service URLs and update `CORS_ORIGINS`, `VITE_API_BASE_URL`, and `VITE_COLLAB_WS_URL` if Render renames any service.
+6. Sign in with the seeded preview account, then verify document load, AI streaming, cancel, accept/reject, and history.
 
 ## Notes
 
-- This branch keeps the current frontend working first.
-- The backend document store is intentionally compatibility-first and in-memory for now.
-- The collab server and DB schema are already upstream, but the full auth/document/Yjs integration is still pending.
-- `infra/render.yaml` now points the frontend service at `client/` instead of the nonexistent `frontend/`.
+- The backend document store is still compatibility-first and in-memory.
+- The collab server is deployed in the target architecture, but the current frontend still uses the compatibility document flow rather than full Yjs editor syncing.
+- This branch is suitable for a private preview, not a public beta.
