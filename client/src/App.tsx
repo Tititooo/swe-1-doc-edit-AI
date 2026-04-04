@@ -9,12 +9,13 @@
  * - US-05: Error Communication
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDocument } from './hooks/useDocument'
 import { useAI } from './hooks/useAI'
 import { useVersionConflict } from './hooks/useVersionConflict'
 import { LoadDocumentButton } from './components/LoadDocumentButton'
 import { TextAreaEditor } from './components/TextAreaEditor'
+import { ExperimentalTiptapEditor } from './components/ExperimentalTiptapEditor'
 import { AISidebar } from './components/AISidebar'
 import { ConflictWarningBanner } from './components/ConflictWarningBanner'
 import { ErrorBanner } from './components/ErrorBanner'
@@ -42,7 +43,9 @@ function App() {
     aiError,
     activeFeature,
     cancelRequest,
+    history,
     markSuggestion,
+    refreshHistory,
     requestRewrite,
     clearError: clearAIError,
     reset: resetAI,
@@ -53,6 +56,7 @@ function App() {
   const [selection, setSelection] = useState<TextSelection | null>(null)
   const [localErrorMessage, setLocalErrorMessage] = useState<string | null>(null)
   const [isUpdateLoading, setIsUpdateLoading] = useState(false)
+  const [editorMode, setEditorMode] = useState<'plain' | 'rich'>('plain')
   const selectedText = selection?.text || ''
 
   // Show error banner when document or AI errors occur
@@ -67,8 +71,14 @@ function App() {
     setLocalErrorMessage(null)
     clearConflict()
     await loadDocument()
+    await refreshHistory()
     resetAI()
-  }, [clearConflict, loadDocument, resetAI])
+  }, [clearConflict, loadDocument, refreshHistory, resetAI])
+
+  useEffect(() => {
+    if (!document?.id) return
+    void refreshHistory()
+  }, [document?.id, refreshHistory])
 
   const handleSelectText = useCallback((nextSelection: TextSelection | null) => {
     setSelection(nextSelection)
@@ -172,6 +182,13 @@ function App() {
           isLoading={loading}
           hasDocument={!!document}
         />
+        <button
+          className="load-button"
+          onClick={() => setEditorMode((mode) => (mode === 'plain' ? 'rich' : 'plain'))}
+          type="button"
+        >
+          {editorMode === 'plain' ? 'Rich Editor Beta' : 'Plain Editor'}
+        </button>
       </header>
 
       {/* Error Banner (US-05) */}
@@ -200,13 +217,21 @@ function App() {
           <div className="editor-layout">
             {/* Text Editor (US-02) */}
             <div className="editor-section">
-              <TextAreaEditor
-                content={content}
-                onChange={handleTextChange}
-                onSelect={handleSelectText}
-                placeholder="Content will appear here..."
-                disabled={isUpdateLoading}
-              />
+              {editorMode === 'plain' ? (
+                <TextAreaEditor
+                  content={content}
+                  onChange={handleTextChange}
+                  onSelect={handleSelectText}
+                  placeholder="Content will appear here..."
+                  disabled={isUpdateLoading}
+                />
+              ) : (
+                <ExperimentalTiptapEditor
+                  content={content}
+                  onChange={handleTextChange}
+                  disabled={isUpdateLoading}
+                />
+              )}
             </div>
 
             {/* AI Sidebar (US-03) */}
@@ -215,6 +240,7 @@ function App() {
               documentText={content}
               aiResponse={aiResponse}
               activeFeature={activeFeature}
+              history={history}
               isLoading={aiLoading}
               onCancel={cancelRequest}
               onReject={handleRejectSuggestion}

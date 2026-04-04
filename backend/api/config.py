@@ -10,6 +10,12 @@ def _split_csv(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _to_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(slots=True)
 class Settings:
     database_url: str | None
@@ -23,6 +29,7 @@ class Settings:
     groq_request_timeout_seconds: float
     ai_per_user_daily_token_limit: int
     ai_per_request_token_cap: int
+    ai_require_auth: bool
     cors_origins: list[str]
     api_port: int
 
@@ -40,6 +47,7 @@ class Settings:
             groq_request_timeout_seconds=float(os.getenv("GROQ_REQUEST_TIMEOUT_SECONDS", "30")),
             ai_per_user_daily_token_limit=int(os.getenv("AI_PER_USER_DAILY_TOKEN_LIMIT", "50000")),
             ai_per_request_token_cap=int(os.getenv("AI_PER_REQUEST_TOKEN_CAP", "4000")),
+            ai_require_auth=_to_bool(os.getenv("AI_REQUIRE_AUTH"), False),
             cors_origins=_split_csv(os.getenv("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173")),
             api_port=int(os.getenv("API_PORT", "4000")),
         )

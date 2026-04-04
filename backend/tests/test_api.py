@@ -100,7 +100,7 @@ def test_compatibility_rewrite_and_streaming_rewrite():
         body = "".join(line.decode() if isinstance(line, bytes) else line for line in response.iter_lines())
 
     assert "event: token" in body
-    assert '"suggestion_id":"suggestion-123"' in body
+    assert '"suggestion_id":"' in body
     assert "event: done" in body
 
 

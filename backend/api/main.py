@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import jwt
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from sse_starlette.sse import EventSourceResponse
 
@@ -22,8 +23,10 @@ from .runtime import AppRuntime
 from .schemas import (
     CompatibilityRewriteRequest,
     CompatibilityRewriteResponse,
+    ContinueRequest,
     DocumentResponse,
     FeedbackRequest,
+    AIHistoryItem,
     HealthResponse,
     RestructureRequest,
     StreamingRewriteRequest,
@@ -67,6 +70,40 @@ def _extract_compat_text(payload: CompatibilityRewriteRequest) -> str:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={"message": "selectedText is required for this AI action", "code": "INVALID_REQUEST"},
     )
+
+
+def _resolve_ai_role(request: Request, settings: Settings) -> str:
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        if settings.ai_require_auth:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"message": "Authentication is required for AI actions.", "code": "TOKEN_EXPIRED"},
+            )
+        return "owner"
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Invalid authorization header.", "code": "TOKEN_EXPIRED"},
+        )
+
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Invalid or expired token.", "code": "TOKEN_EXPIRED"},
+        ) from exc
+
+    role = str(payload.get("role", "editor"))
+    if role not in {"owner", "editor"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"message": "Your role cannot use AI features.", "code": "INSUFFICIENT_PERMISSION"},
+        )
+    return role
 
 
 def create_app() -> FastAPI:
@@ -125,6 +162,12 @@ def create_app() -> FastAPI:
             timestamp=datetime.now(timezone.utc),
         )
 
+    @app.get("/api/ai/history", response_model=list[AIHistoryItem])
+    async def ai_history(request: Request, limit: int = 10):
+        _resolve_ai_role(request, settings)
+        history = await get_runtime(request).list_history(limit=limit)
+        return [AIHistoryItem.model_validate(item) for item in history]
+
     @app.get("/api/document", response_model=DocumentResponse)
     async def get_document(request: Request) -> DocumentResponse:
         return await get_store(request).get_document()
@@ -179,6 +222,7 @@ def create_app() -> FastAPI:
         state_runtime = get_runtime(request)
         estimated_input_tokens = estimate_tokens(selected_text)
         try:
+            _resolve_ai_role(request, settings)
             await state_runtime.enforce_quota(estimated_input_tokens)
             interaction_id = await state_runtime.begin_interaction(feature, selected_text)
             handle, iterator = await state_ai_service.stream_feature(feature, selected_text, **kwargs)
@@ -241,6 +285,7 @@ def create_app() -> FastAPI:
         if "selectedText" in body:
             payload = CompatibilityRewriteRequest.model_validate(body)
             try:
+                _resolve_ai_role(request, settings)
                 selected_text = _extract_compat_text(payload)
                 state_runtime = get_runtime(request)
                 await state_runtime.enforce_quota(estimate_tokens(selected_text))
@@ -297,6 +342,15 @@ def create_app() -> FastAPI:
     @app.post("/api/ai/restructure")
     async def restructure(request_body: RestructureRequest, request: Request):
         return await stream_feature("restructure", request_body.model_dump(), request)
+
+    @app.post("/api/ai/continue")
+    async def continue_writing(request_body: ContinueRequest, request: Request):
+        payload = {
+            "doc_id": request_body.doc_id,
+            "selection": request_body.selection.model_dump(),
+            "instructions": request_body.notes,
+        }
+        return await stream_feature("continue", payload, request)
 
     @app.post("/api/ai/cancel/{suggestion_id}")
     async def cancel_suggestion(suggestion_id: str, request: Request):

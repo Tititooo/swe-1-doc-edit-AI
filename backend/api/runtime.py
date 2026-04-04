@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import asyncpg
@@ -27,6 +27,7 @@ class AppRuntime:
         self._settings = settings
         self._pool: asyncpg.Pool | None = None
         self._identity: RuntimeIdentity | None = None
+        self._memory_history: list[dict[str, Any]] = []
 
     @property
     def connected(self) -> bool:
@@ -137,7 +138,23 @@ class AppRuntime:
 
     async def begin_interaction(self, feature: FeatureName, input_text: str) -> str | None:
         if self._pool is None or self._identity is None:
-            return None
+            interaction_id = str(UUID(bytes=b"\x00" * 16)).replace(
+                "00000000-0000-0000-0000-000000000000",
+                __import__("uuid").uuid4().hex[:8] + "-0000-0000-0000-000000000000",
+            )
+            self._memory_history.insert(
+                0,
+                {
+                    "id": interaction_id,
+                    "feature": feature,
+                    "input_text": input_text,
+                    "suggestion_text": None,
+                    "status": "generated",
+                    "tokens_used": 0,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            return interaction_id
 
         async with self._pool.acquire() as conn:
             interaction_id = await conn.fetchval(
@@ -154,7 +171,15 @@ class AppRuntime:
         return str(interaction_id) if interaction_id else None
 
     async def complete_interaction(self, interaction_id: str | None, suggestion_text: str, tokens_used: int) -> None:
-        if self._pool is None or self._identity is None or interaction_id is None:
+        if interaction_id is None:
+            return
+
+        if self._pool is None or self._identity is None:
+            for item in self._memory_history:
+                if item["id"] == interaction_id:
+                    item["suggestion_text"] = suggestion_text
+                    item["tokens_used"] = tokens_used
+                    return
             return
 
         async with self._pool.acquire() as conn:
@@ -180,6 +205,10 @@ class AppRuntime:
 
     async def record_feedback(self, interaction_id: str, action: FeedbackAction) -> bool:
         if self._pool is None:
+            for item in self._memory_history:
+                if item["id"] == interaction_id:
+                    item["status"] = action
+                    return True
             return False
 
         async with self._pool.acquire() as conn:
@@ -193,3 +222,21 @@ class AppRuntime:
                 action,
             )
         return result.endswith("1")
+
+    async def list_history(self, limit: int = 10) -> list[dict[str, Any]]:
+        if self._pool is None or self._identity is None:
+            return self._memory_history[:limit]
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, feature::text AS feature, input_text, suggestion_text, status::text AS status, tokens_used, created_at
+                FROM ai_interactions
+                WHERE doc_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                UUID(self._identity.doc_id),
+                limit,
+            )
+        return [dict(row) | {"id": str(row["id"]), "created_at": row["created_at"].isoformat()} for row in rows]

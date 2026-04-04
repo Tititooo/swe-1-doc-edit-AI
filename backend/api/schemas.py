@@ -97,3 +97,19 @@ class HealthResponse(BaseModel):
 class FeedbackRequest(BaseModel):
     suggestion_id: str
     action: Literal["accepted", "rejected", "partial", "cancelled"]
+
+
+class ContinueRequest(BaseModel):
+    doc_id: str
+    selection: SelectionPayload
+    notes: str | None = None
+
+
+class AIHistoryItem(BaseModel):
+    id: str
+    feature: str
+    input_text: str
+    suggestion_text: str | None = None
+    status: str
+    tokens_used: int
+    created_at: str

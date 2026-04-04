@@ -11,11 +11,12 @@ import {
   UpdateDocumentPayload,
   AIRewriteRequest,
   AIRewriteResponse,
+  AIHistoryItem,
   APIError,
 } from '../types/document'
 import * as mockAPI from './mockAPI'
 
-type StreamableFeature = Exclude<AIFeature, 'continue'>
+type StreamableFeature = AIFeature
 
 interface StreamAIActionRequest {
   feature: StreamableFeature
@@ -143,6 +144,7 @@ export const streamAIAction = async ({
     summarize: '/ai/summarize',
     translate: '/ai/translate',
     restructure: '/ai/restructure',
+    continue: '/ai/continue',
   }
 
   const body =
@@ -152,7 +154,9 @@ export const streamAIAction = async ({
         ? { doc_id: docId, selection: { text: selectedText } }
         : feature === 'translate'
           ? { doc_id: docId, selection: { text: selectedText }, target_lang: targetLanguage || 'English' }
-          : { doc_id: docId, selection: { text: selectedText }, instructions: notes || 'Improve structure.' }
+          : feature === 'restructure'
+            ? { doc_id: docId, selection: { text: selectedText }, instructions: notes || 'Improve structure.' }
+            : { doc_id: docId, selection: { text: selectedText }, notes: notes || undefined }
 
   const response = await fetch(`${API_BASE_URL}${endpointMap[feature]}`, {
     method: 'POST',
@@ -232,6 +236,17 @@ export const sendAIFeedback = async ({ suggestionId, action }: FeedbackPayload):
       suggestion_id: suggestionId,
       action,
     })
+  } catch (error) {
+    throw handleError(error)
+  }
+}
+
+export const fetchAIHistory = async (limit = 10): Promise<AIHistoryItem[]> => {
+  try {
+    const response = await client.get<AIHistoryItem[]>('/ai/history', {
+      params: { limit },
+    })
+    return response.data
   } catch (error) {
     throw handleError(error)
   }

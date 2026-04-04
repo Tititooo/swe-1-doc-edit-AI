@@ -5,8 +5,8 @@
  */
 
 import { useState, useCallback, useRef } from 'react'
-import { AIRewriteResponse, APIError, AIRewriteRequest, AIFeature } from '../types/document'
-import { cancelAISuggestion, requestAIRewrite, sendAIFeedback, streamAIAction } from '../api/documentAPI'
+import { AIRewriteResponse, APIError, AIRewriteRequest, AIFeature, AIHistoryItem } from '../types/document'
+import { cancelAISuggestion, fetchAIHistory, requestAIRewrite, sendAIFeedback, streamAIAction } from '../api/documentAPI'
 
 export interface AIRequestOptions {
   feature: AIFeature
@@ -21,8 +21,10 @@ interface UseAIReturn {
   aiLoading: boolean
   aiError: APIError | null
   activeFeature: AIFeature
+  history: AIHistoryItem[]
   cancelRequest: () => Promise<void>
   markSuggestion: (action: 'accepted' | 'rejected' | 'partial' | 'cancelled') => Promise<void>
+  refreshHistory: () => Promise<void>
   requestRewrite: (
     documentId: string | null,
     selectedText: string,
@@ -38,8 +40,19 @@ export const useAI = (): UseAIReturn => {
   const [aiLoading, setAILoading] = useState(false)
   const [aiError, setAIError] = useState<APIError | null>(null)
   const [activeFeature, setActiveFeature] = useState<AIFeature>('rewrite')
+  const [history, setHistory] = useState<AIHistoryItem[]>([])
   const abortControllerRef = useRef<AbortController | null>(null)
   const suggestionIdRef = useRef<string | null>(null)
+  const lastDocumentIdRef = useRef<string | null>(null)
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      const items = await fetchAIHistory(8)
+      setHistory(items)
+    } catch {
+      // Keep the current UI stable if history cannot be fetched.
+    }
+  }, [])
 
   const cancelRequest = useCallback(async () => {
     abortControllerRef.current?.abort()
@@ -57,6 +70,7 @@ export const useAI = (): UseAIReturn => {
     setAILoading(false)
     setAIResponse(null)
     setAIError(null)
+    await refreshHistory()
   }, [])
 
   const markSuggestion = useCallback(
@@ -71,6 +85,7 @@ export const useAI = (): UseAIReturn => {
           action,
         })
         suggestionIdRef.current = null
+        await refreshHistory()
       } catch {
         // Best-effort feedback; do not block the UI flow.
       }
@@ -104,6 +119,7 @@ export const useAI = (): UseAIReturn => {
       setAIResponse(null)
       setActiveFeature(options.feature)
       suggestionIdRef.current = null
+      lastDocumentIdRef.current = documentId
 
       try {
         if (options.feature === 'continue') {
@@ -121,6 +137,7 @@ export const useAI = (): UseAIReturn => {
           if (response.success && response.result) {
             suggestionIdRef.current = response.suggestionId || null
             setAIResponse(response.result)
+            await refreshHistory()
           } else {
             throw new Error(response.error || 'AI service returned an error')
           }
@@ -144,6 +161,7 @@ export const useAI = (): UseAIReturn => {
               setAIResponse((prev) => `${prev || ''}${token}`)
             },
           })
+          await refreshHistory()
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -179,8 +197,10 @@ export const useAI = (): UseAIReturn => {
     aiLoading,
     aiError,
     activeFeature,
+    history,
     cancelRequest,
     markSuggestion,
+    refreshHistory,
     requestRewrite,
     clearError,
     reset,
