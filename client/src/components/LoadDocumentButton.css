@@ -1,0 +1,41 @@
+.load-button {
+  background-color: #3498db;
+  color: white;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  justify-content: center;
+}
+
+.load-button:hover:not(:disabled) {
+  background-color: #2980b9;
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+}
+
+.load-button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.load-button .spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
