@@ -1,29 +1,45 @@
-C4Component
-title Collaborative Document Editor - Current FastAPI Backend Component Diagram
+---
+title: C4 Level 3 - FastAPI Backend Components
+---
+graph TB
+    spa["&lt;&lt;container&gt;&gt;<br/><b>React SPA</b><br/><small>Sends HTTP requests,<br/>receives SSE streams</small>"]
 
-Container_Ext(spa, "React SPA", "Browser client", "Calls REST endpoints, opens SSE streams, and requests realtime session bootstrap")
-System_Ext(groq, "Groq LLM API", "External LLM provider")
-ContainerDb_Ext(db, "PostgreSQL", "Managed relational database", "Stores users, document metadata, document content projections, Yjs snapshots, permissions, AI logs, and org AI settings")
+    groq["&lt;&lt;external system&gt;&gt;<br/><b>Groq LLM API</b><br/><small>Streams completions</small>"]
 
-Container_Boundary(api_boundary, "FastAPI Backend") {
-    Component(app, "FastAPI App", "backend/api/main.py", "Registers the current route surface, configures lifespan, CORS, and exception handling")
-    Component(auth, "Auth Module", "backend/api/auth.py", "Hashes passwords and issues or validates JWT access and refresh tokens")
-    Component(runtime, "Runtime Service", "backend/api/runtime.py", "Handles login and registration, document metadata, permissions, AI history, quotas, and admin AI settings")
-    Component(store, "Document Content Store", "backend/api/store.py", "Maintains the strict REST document content projection, version ids, and export helpers")
-    Component(schemas, "Schema Layer", "backend/api/schemas.py", "Defines request and response contracts used by the FastAPI routes")
-    Component(ai_service, "AI Service", "backend/ai/service.py", "Dispatches feature-specific AI operations and coordinates streaming or full completions")
-    Component(prompts, "Prompt Engine", "backend/ai/prompts.py", "Builds prompt templates for rewrite, summarize, translate, restructure, and continue-writing flows")
-    Component(groq_client, "Groq API Client", "backend/ai/groq_client.py", "Executes Groq requests with timeout handling and token streaming")
-}
+    db[("&lt;&lt;database&gt;&gt;<br/><b>PostgreSQL</b><br/><small>Persistent storage</small>")]
 
-Rel(spa, app, "Calls HTTP endpoints and opens SSE streams", "HTTPS")
-Rel(app, schemas, "Validates request and response payloads")
-Rel(app, auth, "Uses JWT and password helpers")
-Rel(app, runtime, "Delegates auth, document metadata, permissions, quotas, and history logic")
-Rel(app, store, "Delegates strict document content load, save, versioning, and export logic")
-Rel(app, ai_service, "Starts AI requests and handles streaming responses")
-Rel(ai_service, prompts, "Constructs feature-specific prompts")
-Rel(ai_service, groq_client, "Requests model inference")
-Rel(runtime, db, "Reads and writes users, documents, permissions, AI logs, and admin policy state", "SQL")
-Rel(store, db, "Reads and writes document content projections and text versions", "SQL")
-Rel(groq_client, groq, "Streams completions", "HTTPS")
+    subgraph api["FastAPI Backend"]
+        app["&lt;&lt;component&gt;&gt;<br/><b>FastAPI App</b><br/><small>backend/api/main.py<br/>─────────────────<br/>Route registration, CORS,<br/>lifespan, exception handling</small>"]
+        schemas["&lt;&lt;component&gt;&gt;<br/><b>Schema Layer</b><br/><small>backend/api/schemas.py<br/>─────────────────<br/>Pydantic request/response<br/>contracts</small>"]
+        auth["&lt;&lt;component&gt;&gt;<br/><b>Auth Module</b><br/><small>backend/api/auth.py<br/>─────────────────<br/>Password hashing, JWT<br/>access and refresh tokens</small>"]
+        runtime["&lt;&lt;component&gt;&gt;<br/><b>Runtime Service</b><br/><small>backend/api/runtime.py<br/>─────────────────<br/>Login, registration, doc<br/>metadata, permissions,<br/>AI history, quotas, admin</small>"]
+        store["&lt;&lt;component&gt;&gt;<br/><b>Document Content Store</b><br/><small>backend/api/store.py<br/>─────────────────<br/>REST content projection,<br/>version IDs, export</small>"]
+        aisvc["&lt;&lt;component&gt;&gt;<br/><b>AI Service</b><br/><small>backend/ai/service.py<br/>─────────────────<br/>Feature dispatch, streaming<br/>and full completions</small>"]
+        prompt["&lt;&lt;component&gt;&gt;<br/><b>Prompt Engine</b><br/><small>backend/ai/prompts.py<br/>─────────────────<br/>Templates for rewrite,<br/>summarize, translate,<br/>restructure, continue</small>"]
+        groqclient["&lt;&lt;component&gt;&gt;<br/><b>Groq API Client</b><br/><small>backend/ai/groq_client.py<br/>─────────────────<br/>Async HTTP, streaming,<br/>timeout handling</small>"]
+    end
+
+    spa -->|"HTTPS REST + SSE"| app
+    app --> schemas
+    app --> auth
+    app --> runtime
+    app --> store
+    app --> aisvc
+    aisvc --> prompt
+    aisvc --> groqclient
+    groqclient -->|"HTTPS"| groq
+    runtime -->|"SQL"| db
+    store -->|"SQL"| db
+
+    style spa fill:#1168bd,color:#fff,stroke:#fff
+    style groq fill:#999,color:#fff,stroke:#fff
+    style db fill:#1168bd,color:#fff,stroke:#fff
+    style app fill:#2a5fa5,color:#fff,stroke:#fff
+    style schemas fill:#2a5fa5,color:#fff,stroke:#fff
+    style auth fill:#2a5fa5,color:#fff,stroke:#fff
+    style runtime fill:#2a5fa5,color:#fff,stroke:#fff
+    style store fill:#2a5fa5,color:#fff,stroke:#fff
+    style aisvc fill:#2a5fa5,color:#fff,stroke:#fff
+    style prompt fill:#2a5fa5,color:#fff,stroke:#fff
+    style groqclient fill:#2a5fa5,color:#fff,stroke:#fff
+    style api fill:transparent,stroke:#1168bd,stroke-width:2px,color:#1168bd
