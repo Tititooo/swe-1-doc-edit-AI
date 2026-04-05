@@ -34,5 +34,10 @@ test('auth, rich sync, and AI rewrite work end to end', async ({ browser, page }
   await page.getByTestId('ai-run').click()
 
   await expect(page.getByTestId('rich-preview')).toContainText('[rewrite:polished]')
+  await page.getByTestId('rich-preview-accept').click()
+  await expect(page.getByTestId('rich-preview')).toBeHidden()
+  const updatedEditor = page.locator('.ProseMirror').first()
+  await expect(updatedEditor).toBeVisible()
+  await expect(updatedEditor).toContainText('[rewrite:polished]')
   await expect(page.locator('text=Recent AI Activity')).toBeVisible()
 })

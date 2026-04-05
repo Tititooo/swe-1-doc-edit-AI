@@ -17,8 +17,7 @@ interface ExperimentalTiptapEditorProps {
   isStreaming: boolean
   onChange: (content: string) => void
   onSelect: (selection: TextSelection | null) => void
-  onAccept: (newText: string) => void
-  onClearPreview: () => void
+  onAccept: (newText: string) => Promise<void>
   onReject: () => void
   disabled?: boolean
 }
@@ -98,7 +97,6 @@ export const ExperimentalTiptapEditor = ({
   onChange,
   onSelect,
   onAccept,
-  onClearPreview,
   onReject,
   disabled = false,
 }: ExperimentalTiptapEditorProps) => {
@@ -111,8 +109,9 @@ export const ExperimentalTiptapEditor = ({
   const seededDocsRef = useRef<Set<string>>(new Set())
   const selectionRangeRef = useRef<EditorSelectionRange | null>(null)
   const [realtimeContext, setRealtimeContext] = useState<RealtimeEditorContext | null>(null)
-  const [hidePreview, setHidePreview] = useState(false)
-  const hasPreview = !!aiResponse && !hidePreview
+  const [acceptingPreview, setAcceptingPreview] = useState(false)
+  const canShowPreview = activeFeature === 'continue' || !!selection
+  const hasPreview = !!aiResponse && !acceptingPreview && canShowPreview
 
   useEffect(() => {
     if (!documentId || !sessionQuery.data) {
@@ -262,7 +261,7 @@ export const ExperimentalTiptapEditor = ({
   )
 
   useEffect(() => {
-    setHidePreview(false)
+    setAcceptingPreview(false)
   }, [aiResponse])
 
   const applyPreviewToEditor = async () => {
@@ -270,12 +269,12 @@ export const ExperimentalTiptapEditor = ({
       return
     }
 
-    setHidePreview(true)
-
-    const previewMarkup = textToHtml(aiResponse)
-    const selectionRange = selectionRangeRef.current
+    setAcceptingPreview(true)
 
     try {
+      const previewMarkup = textToHtml(aiResponse)
+      const selectionRange = selectionRangeRef.current
+
       if (selectionRange) {
         editor
           .chain()
@@ -289,10 +288,10 @@ export const ExperimentalTiptapEditor = ({
       }
 
       onSelect(null)
-      await Promise.resolve(onAccept(editor.getText({ blockSeparator: '\n\n' })))
-      onClearPreview()
+      await onAccept(editor.getText({ blockSeparator: '\n\n' }))
     } catch (error) {
-      setHidePreview(false)
+      editor.commands.setContent(textToHtml(content), false)
+      setAcceptingPreview(false)
       throw error
     }
   }

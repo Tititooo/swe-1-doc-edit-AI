@@ -45,10 +45,12 @@ function App() {
     aiError,
     activeFeature,
     cancelRequest,
+    dismissResponse,
     history,
     markSuggestion,
     refreshHistory,
     requestRewrite,
+    restoreResponse,
     clearError: clearAIError,
     reset: resetAI,
   } = useAI()
@@ -129,6 +131,9 @@ function App() {
         return
       }
 
+      const featureToRestore = activeFeature
+      dismissResponse()
+
       setIsUpdateLoading(true)
       setLocalErrorMessage(null)
       try {
@@ -144,12 +149,24 @@ function App() {
         setSelection(null)
       } catch (error) {
         const apiError = error as APIError
+        restoreResponse(newText, featureToRestore)
         setLocalErrorMessage(apiError.message || 'Failed to update document.')
       } finally {
         setIsUpdateLoading(false)
       }
     },
-    [checkConflict, clearConflict, document?.id, markSuggestion, resetAI, syncDocument, versionId]
+    [
+      activeFeature,
+      checkConflict,
+      clearConflict,
+      dismissResponse,
+      document?.id,
+      markSuggestion,
+      resetAI,
+      restoreResponse,
+      syncDocument,
+      versionId,
+    ]
   )
 
   const handleTextChange = useCallback(
@@ -285,7 +302,6 @@ function App() {
                 onChange={handleTextChange}
                 onSelect={handleSelectText}
                 onAccept={handleApplyRewrite}
-                onClearPreview={resetAI}
                 onReject={() => void handleRejectSuggestion()}
                 disabled={isUpdateLoading}
               />

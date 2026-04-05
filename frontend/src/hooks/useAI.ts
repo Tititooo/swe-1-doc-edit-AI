@@ -22,6 +22,8 @@ interface UseAIReturn {
   aiError: APIError | null
   activeFeature: AIFeature
   history: AIHistoryItem[]
+  dismissResponse: () => void
+  restoreResponse: (response: string, feature?: AIFeature) => void
   cancelRequest: () => Promise<void>
   markSuggestion: (action: 'accepted' | 'rejected' | 'partial' | 'cancelled') => Promise<void>
   refreshHistory: () => Promise<void>
@@ -164,6 +166,17 @@ export const useAI = (): UseAIReturn => {
     setAIError(null)
   }, [])
 
+  const dismissResponse = useCallback(() => {
+    setAIResponse(null)
+    setAIError(null)
+  }, [])
+
+  const restoreResponse = useCallback((response: string, feature: AIFeature = 'rewrite') => {
+    setActiveFeature(feature)
+    setAIResponse(response)
+    setAIError(null)
+  }, [])
+
   const reset = useCallback(() => {
     setAIResponse(null)
     setAIError(null)
@@ -180,6 +193,8 @@ export const useAI = (): UseAIReturn => {
     aiError,
     activeFeature,
     history,
+    dismissResponse,
+    restoreResponse,
     cancelRequest,
     markSuggestion,
     refreshHistory,
