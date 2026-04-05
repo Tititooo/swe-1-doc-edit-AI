@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -22,16 +22,34 @@ from .config import Settings
 from .runtime import AppRuntime, RuntimeUser
 from .schemas import (
     AIHistoryItem,
+    AISettingsPatchRequest,
+    AISettingsResponse,
     AuthRequest,
     AuthResponse,
+    CompatibilityDocumentResponse,
     CompatibilityRewriteRequest,
     CompatibilityRewriteResponse,
     ContinueRequest,
-    DocumentResponse,
+    CreateDocumentRequest,
+    CreateSnapshotRequest,
+    DocumentCreateResponse,
+    DocumentDetailResponse,
+    DocumentListItem,
+    DocumentMutationResponse,
+    DocumentVersionItem,
     FeedbackRequest,
     HealthResponse,
+    PatchDocumentRequest,
+    PermissionCreateRequest,
+    PermissionListItem,
+    PermissionMutationResponse,
+    PermissionUpdateRequest,
     RefreshRequest,
+    RealtimeSessionRequest,
+    RealtimeSessionResponse,
     RegisterRequest,
+    RealtimeAwarenessUser,
+    RevertResponse,
     RestructureRequest,
     StreamingRewriteRequest,
     SuggestionEvent,
@@ -89,7 +107,7 @@ def create_app() -> FastAPI:
         yield
         await runtime.shutdown()
 
-    app = FastAPI(title="Collab Editor API", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="Collab Editor API", version="0.4.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.store = store
     app.state.ai_service = ai_service
@@ -139,13 +157,9 @@ def create_app() -> FastAPI:
         if not authorization:
             if allow_fallback:
                 if state_runtime.connected:
-                    fallback_user = await state_runtime.get_user(state_runtime.document.owner_user_id)
-                    if fallback_user is None:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail={"message": "Authentication is required.", "code": "TOKEN_EXPIRED"},
-                        )
-                    return fallback_user
+                    fallback_user = await state_runtime.get_user(state_runtime.preview_owner_user_id)
+                    if fallback_user is not None:
+                        return fallback_user
                 return state_runtime.get_preview_user()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -175,11 +189,40 @@ def create_app() -> FastAPI:
             )
         return user
 
-    def require_roles(user: RuntimeUser, allowed: set[str], message: str) -> None:
-        if user.role not in allowed:
+    async def require_document_role(
+        request: Request,
+        *,
+        doc_id: str,
+        user: RuntimeUser,
+        allowed: set[str] | None = None,
+        denied_message: str = "Your role cannot access this document.",
+    ) -> str:
+        role = await get_runtime(request).get_document_role(doc_id, user.id)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            )
+        if allowed is not None and role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"message": message, "code": "INSUFFICIENT_PERMISSION"},
+                detail={"message": denied_message, "code": "INSUFFICIENT_PERMISSION"},
+            )
+        return role
+
+    async def require_admin(request: Request, user: RuntimeUser) -> None:
+        if not await get_runtime(request).is_admin_user(user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Only the organization admin can access this resource.", "code": "INSUFFICIENT_PERMISSION"},
+            )
+
+    async def ensure_ai_feature_enabled(request: Request, *, feature: str, role: str) -> None:
+        enabled = await get_runtime(request).is_ai_feature_enabled_for_role(feature, role)  # type: ignore[arg-type]
+        if not enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "This AI feature is disabled for your role.", "code": "INSUFFICIENT_PERMISSION"},
             )
 
     @app.get("/health", response_model=HealthResponse)
@@ -239,36 +282,323 @@ def create_app() -> FastAPI:
     async def me(request: Request) -> UserResponse:
         return as_user_response(await resolve_user(request))
 
+    @app.get("/api/documents", response_model=list[DocumentListItem])
+    async def list_documents(request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        items = await get_runtime(request).list_documents_for_user(user.id)
+        return [DocumentListItem.model_validate(item) for item in items]
+
+    @app.post("/api/documents", response_model=DocumentCreateResponse, status_code=status.HTTP_201_CREATED)
+    async def create_document(payload: CreateDocumentRequest, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        created = await get_runtime(request).create_document(user.id, payload.title.strip())
+        return DocumentCreateResponse.model_validate(created)
+
+    @app.get("/api/documents/{doc_id}", response_model=DocumentDetailResponse)
+    async def get_document_by_id(doc_id: str, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            detail = await get_runtime(request).get_document_detail(doc_id, user.id)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Your role cannot access this document.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return DocumentDetailResponse.model_validate(detail)
+
+    @app.patch("/api/documents/{doc_id}", response_model=DocumentMutationResponse)
+    async def patch_document(doc_id: str, payload: PatchDocumentRequest, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            updated = await get_runtime(request).update_document_title(doc_id, payload.title.strip(), user.id)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Your role cannot rename this document.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return updated
+
+    @app.delete("/api/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_document(doc_id: str, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            await get_runtime(request).soft_delete_document(doc_id, user.id)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Only the owner can delete this document.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post("/api/documents/{doc_id}/restore", response_model=DocumentMutationResponse)
+    async def restore_document(doc_id: str, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            restored = await get_runtime(request).restore_document(doc_id, user.id)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Only the owner can restore this document.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": str(exc), "code": "INVALID_REQUEST"},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return DocumentMutationResponse.model_validate(restored)
+
+    @app.post("/api/realtime/session", response_model=RealtimeSessionResponse)
+    async def create_realtime_session(payload: RealtimeSessionRequest, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        role = await require_document_role(request, doc_id=payload.doc_id, user=user)
+        access_token = request.headers.get("Authorization", "").partition(" ")[2]
+        if not access_token:
+            access_token = create_access_token(
+                AuthSubject(user_id=user.id, email=user.email, role=user.role, name=user.name),
+                settings,
+            )
+        ws_url = f"{settings.collab_ws_url.rstrip('/')}/doc/{payload.doc_id}"
+        ws_url = f"{ws_url}?token={access_token}"
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+        palette = ["#0f766e", "#1d4ed8", "#7c3aed", "#be123c", "#a16207", "#4338ca"]
+        color = palette[sum(ord(char) for char in user.id) % len(palette)]
+        return RealtimeSessionResponse(
+            doc_id=payload.doc_id,
+            ws_url=ws_url,
+            role=role,
+            expires_at=expires_at.isoformat(),
+            awareness_user=RealtimeAwarenessUser(id=user.id, name=user.name, color=color),
+        )
+
+    @app.post("/api/documents/{doc_id}/snapshot", response_model=RevertResponse)
+    async def snapshot_document(doc_id: str, payload: CreateSnapshotRequest, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        await require_document_role(
+            request,
+            doc_id=doc_id,
+            user=user,
+            allowed={"owner", "editor"},
+            denied_message="Your role cannot snapshot this document.",
+        )
+        try:
+            version = await get_store(request).create_snapshot(doc_id, user.id, payload.snapshot)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return RevertResponse(version_id=version.version_id, created_at=version.created_at)
+
+    @app.get("/api/documents/{doc_id}/versions", response_model=list[DocumentVersionItem])
+    async def list_document_versions(doc_id: str, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        await require_document_role(request, doc_id=doc_id, user=user)
+        try:
+            return await get_store(request).list_versions(doc_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+
+    @app.post("/api/documents/{doc_id}/revert/{version_id}", response_model=RevertResponse)
+    async def revert_document(doc_id: str, version_id: int, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        await require_document_role(
+            request,
+            doc_id=doc_id,
+            user=user,
+            allowed={"owner", "editor"},
+            denied_message="Your role cannot revert this document.",
+        )
+        try:
+            version = await get_store(request).revert_document(doc_id, version_id, user.id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document or version not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return RevertResponse(version_id=version.version_id, created_at=version.created_at)
+
+    @app.get("/api/documents/{doc_id}/export")
+    async def export_document(doc_id: str, request: Request, format: str = Query(pattern="^(pdf|docx|md)$")):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        await require_document_role(request, doc_id=doc_id, user=user)
+        try:
+            exported = await get_store(request).export_document(doc_id, format)  # type: ignore[arg-type]
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        headers = {"Content-Disposition": f'attachment; filename="{exported.filename}"'}
+        return Response(content=exported.content, media_type=exported.media_type, headers=headers)
+
+    @app.get("/api/documents/{doc_id}/permissions", response_model=list[PermissionListItem])
+    async def list_document_permissions(doc_id: str, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            permissions = await get_runtime(request).list_permissions(doc_id, user.id)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Your role cannot view document permissions.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        return [PermissionListItem.model_validate(item) for item in permissions]
+
+    @app.post("/api/documents/{doc_id}/permissions", response_model=PermissionMutationResponse, status_code=status.HTTP_201_CREATED)
+    async def create_document_permission(doc_id: str, payload: PermissionCreateRequest, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            created = await get_runtime(request).add_permission(doc_id, user.id, payload.user_email, payload.role)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Only the owner can share this document.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": str(exc), "code": "INVALID_REQUEST"},
+            ) from exc
+        return PermissionMutationResponse.model_validate(created)
+
+    @app.patch("/api/documents/{doc_id}/permissions/{permission_id}", response_model=PermissionMutationResponse)
+    async def patch_document_permission(doc_id: str, permission_id: str, payload: PermissionUpdateRequest, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            updated = await get_runtime(request).update_permission(doc_id, permission_id, user.id, payload.role)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Only the owner can manage sharing.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Permission not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return PermissionMutationResponse.model_validate(updated)
+
+    @app.delete("/api/documents/{doc_id}/permissions/{permission_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_document_permission(doc_id: str, permission_id: str, request: Request):
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            await get_runtime(request).delete_permission(doc_id, permission_id, user.id)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Only the owner can manage sharing.", "code": "INSUFFICIENT_PERMISSION"},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": str(exc), "code": "INVALID_REQUEST"},
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Permission not found.", "code": "DOCUMENT_NOT_FOUND"},
+            ) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.get("/api/ai/history", response_model=list[AIHistoryItem])
     async def ai_history(
         request: Request,
         limit: int = 10,
         feature: str | None = None,
+        doc_id: str | None = None,
         history_status: str | None = Query(default=None, alias="status"),
     ):
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        require_roles(user, {"owner", "editor"}, "Your role cannot use AI features.")
-        state_runtime = get_runtime(request)
-        history = await state_runtime.list_history(
+        active_doc_id = doc_id or get_runtime(request).preview_doc_id
+        await require_document_role(
+            request,
+            doc_id=active_doc_id,
+            user=user,
+            allowed={"owner", "editor"},
+            denied_message="Your role cannot use AI features.",
+        )
+        history = await get_runtime(request).list_history(
             user_id=user.id,
-            doc_id=state_runtime.preview_doc_id,
+            doc_id=active_doc_id,
             limit=limit,
             feature=feature,
             status=history_status,
         )
         return [AIHistoryItem.model_validate(item) for item in history]
 
-    @app.get("/api/document", response_model=DocumentResponse)
-    async def get_document(request: Request) -> DocumentResponse:
-        await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        return await get_store(request).get_document()
-
-    @app.put("/api/document", response_model=DocumentResponse)
-    async def put_document(payload: UpdateDocumentPayload, request: Request) -> DocumentResponse:
+    @app.delete("/api/ai/history/{interaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_ai_history_item(interaction_id: str, request: Request):
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        require_roles(user, {"owner", "editor"}, "Your role cannot edit this document.")
+        deleted = await get_runtime(request).delete_history_item(interaction_id, user_id=user.id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "AI history item not found.", "code": "DOCUMENT_NOT_FOUND"},
+            )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/api/admin/ai-settings", response_model=AISettingsResponse)
+    async def get_admin_ai_settings(request: Request):
+        user = await resolve_user(request)
+        await require_admin(request, user)
+        settings_payload = await get_runtime(request).get_ai_settings()
+        return AISettingsResponse.model_validate(settings_payload)
+
+    @app.patch("/api/admin/ai-settings", response_model=AISettingsResponse)
+    async def patch_admin_ai_settings(payload: AISettingsPatchRequest, request: Request):
+        user = await resolve_user(request)
+        await require_admin(request, user)
+        updated = await get_runtime(request).update_ai_settings(
+            acting_user_id=user.id,
+            feature_access=payload.feature_access,
+            daily_token_limit=payload.daily_token_limit,
+            monthly_token_budget=payload.monthly_org_token_budget,
+            consent_required=payload.consent_required,
+        )
+        return AISettingsResponse.model_validate(updated)
+
+    @app.get("/api/document", response_model=CompatibilityDocumentResponse)
+    async def get_document(request: Request) -> CompatibilityDocumentResponse:
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        doc_id = get_runtime(request).preview_doc_id
+        await require_document_role(request, doc_id=doc_id, user=user)
+        return await get_store(request).get_document(doc_id)
+
+    @app.put("/api/document", response_model=CompatibilityDocumentResponse)
+    async def put_document(payload: UpdateDocumentPayload, request: Request) -> CompatibilityDocumentResponse:
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        doc_id = get_runtime(request).preview_doc_id
+        await require_document_role(
+            request,
+            doc_id=doc_id,
+            user=user,
+            allowed={"owner", "editor"},
+            denied_message="Your role cannot edit this document.",
+        )
         try:
-            return await get_store(request).update_document(payload.content, payload.versionId)
+            return await get_store(request).update_document(doc_id, payload.content, payload.versionId, user.id)
         except VersionConflictError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -277,26 +607,28 @@ def create_app() -> FastAPI:
 
     @app.get("/api/document/version", response_model=VersionResponse)
     async def get_document_version(request: Request) -> VersionResponse:
-        await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        return VersionResponse(versionId=await get_store(request).get_version())
-
-    @app.put("/api/documents/{doc_id}", response_model=DocumentResponse)
-    async def update_document_by_id(doc_id: str, payload: UpdateDocumentPayload, request: Request) -> DocumentResponse:
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        require_roles(user, {"owner", "editor"}, "Your role cannot edit this document.")
-        current = await get_store(request).get_document_by_id(doc_id)
-        if current.versionId != payload.versionId:
+        doc_id = get_runtime(request).preview_doc_id
+        await require_document_role(request, doc_id=doc_id, user=user)
+        return VersionResponse(versionId=await get_store(request).get_version(doc_id))
+
+    @app.put("/api/documents/{doc_id}", response_model=CompatibilityDocumentResponse)
+    async def update_document_by_id(doc_id: str, payload: UpdateDocumentPayload, request: Request) -> CompatibilityDocumentResponse:
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        await require_document_role(
+            request,
+            doc_id=doc_id,
+            user=user,
+            allowed={"owner", "editor"},
+            denied_message="Your role cannot edit this document.",
+        )
+        try:
+            return await get_store(request).update_document(doc_id, payload.content, payload.versionId, user.id)
+        except VersionConflictError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"message": "Version conflict.", "code": "VERSION_CONFLICT"},
-            )
-        return await get_store(request).update_document(payload.content, payload.versionId)
-
-    @app.get("/api/documents/{doc_id}", response_model=DocumentResponse)
-    async def get_document_by_id(doc_id: str, request: Request) -> DocumentResponse:
-        await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        try:
-            return await get_store(request).get_document_by_id(doc_id)
+                detail={"message": str(exc), "code": "VERSION_CONFLICT"},
+            ) from exc
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -305,7 +637,15 @@ def create_app() -> FastAPI:
 
     async def stream_feature(feature: str, payload: dict[str, Any], request: Request) -> EventSourceResponse:
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        require_roles(user, {"owner", "editor"}, "Your role cannot use AI features.")
+        doc_id = str(payload.get("doc_id") or get_runtime(request).preview_doc_id)
+        role = await require_document_role(
+            request,
+            doc_id=doc_id,
+            user=user,
+            allowed={"owner", "editor"},
+            denied_message="Your role cannot use AI features.",
+        )
+        await ensure_ai_feature_enabled(request, feature=feature, role=role)
 
         state_ai_service = get_ai_service(request)
         state_runtime = get_runtime(request)
@@ -323,7 +663,6 @@ def create_app() -> FastAPI:
 
         interaction_id = None
         accumulated_text = ""
-        doc_id = str(payload.get("doc_id") or state_runtime.preview_doc_id)
         estimated_input_tokens = estimate_tokens(selected_text)
 
         try:
@@ -400,14 +739,22 @@ def create_app() -> FastAPI:
         if "selectedText" in body:
             payload = CompatibilityRewriteRequest.model_validate(body)
             user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-            require_roles(user, {"owner", "editor"}, "Your role cannot use AI features.")
+            doc_id = get_runtime(request).preview_doc_id
+            role = await require_document_role(
+                request,
+                doc_id=doc_id,
+                user=user,
+                allowed={"owner", "editor"},
+                denied_message="Your role cannot use AI features.",
+            )
+            await ensure_ai_feature_enabled(request, feature=payload.feature, role=role)
             selected_text = _extract_compat_text(payload)
             state_runtime = get_runtime(request)
             try:
                 await state_runtime.enforce_quota(user.id, estimate_tokens(selected_text))
                 interaction_id = await state_runtime.begin_interaction(
                     user_id=user.id,
-                    doc_id=state_runtime.preview_doc_id,
+                    doc_id=doc_id,
                     feature=payload.feature,
                     input_text=selected_text,
                 )
@@ -482,7 +829,6 @@ def create_app() -> FastAPI:
     @app.post("/api/ai/cancel/{suggestion_id}")
     async def cancel_suggestion(suggestion_id: str, request: Request):
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        require_roles(user, {"owner", "editor"}, "Your role cannot use AI features.")
         cancelled = await get_ai_service(request).cancel(suggestion_id)
         await get_runtime(request).record_feedback(suggestion_id, "cancelled", user_id=user.id)
         if not cancelled:
@@ -495,7 +841,6 @@ def create_app() -> FastAPI:
     @app.post("/api/ai/feedback")
     async def feedback(payload: FeedbackRequest, request: Request):
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        require_roles(user, {"owner", "editor"}, "Your role cannot use AI features.")
         updated = await get_runtime(request).record_feedback(payload.suggestion_id, payload.action, user_id=user.id)
         return {"ok": True, "received": payload.model_dump(), "persisted": updated}
 

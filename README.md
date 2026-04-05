@@ -15,6 +15,20 @@ This branch is the stacked PR3 hardening pass on top of the earlier FastAPI + Gr
   - `GET /api/document`
   - `PUT /api/document`
   - `GET /api/document/version`
+- Strict document routes:
+  - `GET /api/documents`
+  - `POST /api/documents`
+  - `GET /api/documents/:id`
+  - `PATCH /api/documents/:id`
+  - `DELETE /api/documents/:id`
+  - `POST /api/documents/:id/restore`
+  - `POST /api/documents/:id/snapshot`
+  - `GET /api/documents/:id/versions`
+  - `POST /api/documents/:id/revert/:version_id`
+  - `GET /api/documents/:id/export`
+  - `GET/POST/PATCH/DELETE /api/documents/:id/permissions/*`
+- Realtime bootstrap:
+  - `POST /api/realtime/session`
 - AI routes:
   - `POST /api/ai/rewrite`
   - `POST /api/ai/summarize`
@@ -24,6 +38,10 @@ This branch is the stacked PR3 hardening pass on top of the earlier FastAPI + Gr
   - `POST /api/ai/cancel/:suggestion_id`
   - `POST /api/ai/feedback`
   - `GET /api/ai/history`
+  - `DELETE /api/ai/history/:interaction_id`
+- Admin routes:
+  - `GET /api/admin/ai-settings`
+  - `PATCH /api/admin/ai-settings`
 - Frontend auth bootstrap, token refresh, streaming AI, cancel, feedback, and history
 
 ## Preview Credentials
@@ -31,8 +49,8 @@ This branch is the stacked PR3 hardening pass on top of the earlier FastAPI + Gr
 When auth is enabled, the backend seeds a preview account:
 
 ```text
-email: temiko.dev@local
-password: temiko-preview-pass
+email: atharv.dev@local
+password: atharv-preview-pass
 ```
 
 Override `DEV_BOOTSTRAP_EMAIL` and `DEV_BOOTSTRAP_PASSWORD` if you want different preview credentials.
@@ -52,6 +70,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/collab_editor
 JWT_SECRET=<strong-random-secret>
 GROQ_API_KEY=<your-groq-key>
 COLLAB_SYSTEM_USER_ID=00000000-0000-0000-0000-000000000001
+COLLAB_WS_URL=ws://127.0.0.1:1234
 ```
 
 ### 2. Start PostgreSQL 16
@@ -81,7 +100,7 @@ docker exec -it collab-editor-db psql -U postgres -d collab_editor -c \
 ### 3. Install dependencies
 
 ```bash
-cd client && npm ci
+cd frontend && npm ci
 cd ../backend/collab && npm ci
 cd ../ && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 cd ..
@@ -104,10 +123,14 @@ cd backend/collab
 npm run dev
 ```
 
+If you do not have PostgreSQL or Docker running locally, you can still start the
+collab server in ephemeral mode by leaving `DATABASE_URL` unset for that process.
+Live sync will work, but snapshot persistence to `document_versions` will be disabled.
+
 Frontend:
 
 ```bash
-cd client
+cd frontend
 VITE_API_BASE_URL=http://127.0.0.1:4000/api \
 VITE_ENABLE_MOCK_API=false \
 VITE_DEV_AUTOLOGIN=true \
@@ -129,7 +152,7 @@ pytest -q
 Frontend:
 
 ```bash
-cd client
+cd frontend
 npm run build
 ```
 
@@ -140,7 +163,7 @@ curl http://127.0.0.1:4000/health
 
 curl -X POST http://127.0.0.1:4000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"temiko.dev@local","password":"temiko-preview-pass"}'
+  -d '{"email":"atharv.dev@local","password":"atharv-preview-pass"}'
 ```
 
 ## Render Private Preview

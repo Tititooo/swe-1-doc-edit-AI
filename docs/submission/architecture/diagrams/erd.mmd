@@ -1,0 +1,88 @@
+%% The draft contract listed five core tables. This ERD adds organization policy tables so FR-UM-04 has explicit persistent state.
+erDiagram
+    ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERSHIPS : has
+    USERS ||--o{ ORGANIZATION_MEMBERSHIPS : joins
+    ORGANIZATIONS ||--|| ORGANIZATION_AI_POLICIES : governs
+    ORGANIZATIONS ||--o{ DOCUMENTS : scopes
+    USERS ||--o{ DOCUMENTS : owns
+    USERS ||--o{ DOCUMENT_VERSIONS : creates
+    USERS ||--o{ PERMISSIONS : receives
+    USERS ||--o{ AI_INTERACTIONS : invokes
+    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : records
+    DOCUMENTS ||--o{ PERMISSIONS : shares
+    DOCUMENTS ||--o{ AI_INTERACTIONS : tracks
+
+    USERS {
+        uuid id PK
+        string email UK
+        string hashed_password
+        string name
+        int daily_ai_tokens_used
+        datetime ai_tokens_reset_at
+        datetime created_at
+    }
+
+    ORGANIZATIONS {
+        uuid id PK
+        string name
+        datetime created_at
+    }
+
+    ORGANIZATION_MEMBERSHIPS {
+        uuid id PK
+        uuid organization_id FK
+        uuid user_id FK
+        string org_role
+        datetime created_at
+    }
+
+    ORGANIZATION_AI_POLICIES {
+        uuid id PK
+        uuid organization_id FK
+        boolean rewrite_enabled_for_editors
+        boolean summarize_enabled_for_editors
+        boolean translate_enabled_for_editors
+        boolean restructure_enabled_for_editors
+        int monthly_token_budget
+        datetime updated_at
+    }
+
+    DOCUMENTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid owner_id FK
+        string title
+        boolean is_deleted
+        datetime created_at
+        datetime updated_at
+    }
+
+    DOCUMENT_VERSIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid created_by FK
+        blob snapshot
+        string version_reason
+        datetime created_at
+    }
+
+    PERMISSIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid user_id FK
+        string role
+        datetime created_at
+    }
+
+    AI_INTERACTIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid user_id FK
+        string feature
+        string source_range
+        text input_text
+        text suggestion_text
+        string status
+        int tokens_used
+        datetime created_at
+    }

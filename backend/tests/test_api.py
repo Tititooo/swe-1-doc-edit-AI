@@ -42,7 +42,9 @@ class FakeAIService:
 def create_test_client(monkeypatch, *, auth_required: bool = False) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("AI_REQUIRE_AUTH", "true" if auth_required else "false")
-    monkeypatch.setenv("DEV_BOOTSTRAP_PASSWORD", "temiko-preview-pass")
+    monkeypatch.setenv("DEV_BOOTSTRAP_EMAIL", "atharv.dev@local")
+    monkeypatch.setenv("DEV_BOOTSTRAP_PASSWORD", "atharv-preview-pass")
+    monkeypatch.setenv("COLLAB_WS_URL", "ws://localhost:1234")
     app = create_app()
     app.state.ai_service = FakeAIService()
     client = TestClient(app)
@@ -141,6 +143,13 @@ def test_rewrite_feedback_and_filtered_history(monkeypatch):
     assert body[0]["status"] == "accepted"
     assert body[0]["feature"] == "rewrite"
 
+    deleted = client.delete(f"/api/ai/history/{suggestion_id}", headers=headers)
+    assert deleted.status_code == 204
+
+    history_after_delete = client.get("/api/ai/history", headers=headers)
+    assert history_after_delete.status_code == 200
+    assert history_after_delete.json() == []
+
 
 def test_streaming_rewrite_and_cancel(monkeypatch):
     client = create_test_client(monkeypatch, auth_required=True)
@@ -183,8 +192,11 @@ def test_viewer_cannot_use_ai(monkeypatch):
     assert register.status_code == 201
 
     runtime = app.state.runtime
-    viewer = runtime._memory_users_by_email["viewer@example.com"]
-    viewer.role = "viewer"
+    preview_permissions = runtime._memory_permissions[runtime.preview_doc_id]
+    permission = next(
+        item for item in preview_permissions.values() if item.user_id == runtime._memory_users_by_email["viewer@example.com"].id
+    )
+    permission.role = "viewer"
 
     login = client.post(
         "/api/auth/login",
@@ -193,5 +205,166 @@ def test_viewer_cannot_use_ai(monkeypatch):
     headers = auth_headers(login.json()["accessToken"])
 
     blocked = client.post("/api/ai/rewrite", json={"selectedText": "Hello", "versionId": 1}, headers=headers)
+    assert blocked.status_code == 403
+    assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"
+
+
+def test_realtime_session_and_restore_document(monkeypatch):
+    client = create_test_client(monkeypatch, auth_required=True)
+
+    auth = client.post(
+        "/api/auth/register",
+        json={"email": "owner@example.com", "password": "PreviewPass123!", "name": "Owner"},
+    ).json()
+    headers = auth_headers(auth["accessToken"])
+
+    created = client.post("/api/documents", json={"title": "Spec Draft"}, headers=headers)
+    assert created.status_code == 201
+    doc_id = created.json()["id"]
+
+    realtime = client.post("/api/realtime/session", json={"doc_id": doc_id}, headers=headers)
+    assert realtime.status_code == 200
+    realtime_body = realtime.json()
+    assert realtime_body["doc_id"] == doc_id
+    assert realtime_body["role"] == "owner"
+    assert realtime_body["ws_url"].endswith(f"/doc/{doc_id}?token={auth['accessToken']}")
+    assert realtime_body["awareness_user"]["name"] == "Owner"
+
+    deleted = client.delete(f"/api/documents/{doc_id}", headers=headers)
+    assert deleted.status_code == 204
+
+    missing = client.get(f"/api/documents/{doc_id}", headers=headers)
+    assert missing.status_code == 404
+
+    restored = client.post(f"/api/documents/{doc_id}/restore", headers=headers)
+    assert restored.status_code == 200
+    assert restored.json()["restored"] is True
+
+    loaded = client.get(f"/api/documents/{doc_id}", headers=headers)
+    assert loaded.status_code == 200
+    assert loaded.json()["title"] == "Spec Draft"
+
+
+def test_admin_ai_settings_and_history_delete(monkeypatch):
+    client = create_test_client(monkeypatch, auth_required=True)
+
+    user_auth = client.post(
+        "/api/auth/register",
+        json={"email": "editor@example.com", "password": "PreviewPass123!", "name": "Editor"},
+    ).json()
+    user_headers = auth_headers(user_auth["accessToken"])
+
+    compat = client.post("/api/ai/rewrite", json={"selectedText": "Hello", "versionId": 1}, headers=user_headers)
+    assert compat.status_code == 200
+    suggestion_id = compat.json()["suggestionId"]
+
+    history = client.get("/api/ai/history", headers=user_headers)
+    assert history.status_code == 200
+    history_items = history.json()
+    assert any(item["id"] == suggestion_id for item in history_items)
+
+    deleted = client.delete(f"/api/ai/history/{suggestion_id}", headers=user_headers)
+    assert deleted.status_code == 204
+
+    history_after_delete = client.get("/api/ai/history", headers=user_headers)
+    assert history_after_delete.status_code == 200
+    assert all(item["id"] != suggestion_id for item in history_after_delete.json())
+
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "atharv.dev@local", "password": "atharv-preview-pass"},
+    )
+    assert admin_login.status_code == 200
+    admin_headers = auth_headers(admin_login.json()["accessToken"])
+
+    settings_response = client.get("/api/admin/ai-settings", headers=admin_headers)
+    assert settings_response.status_code == 200
+    settings_body = settings_response.json()
+    assert "editor" in settings_body["feature_access"]
+
+    patched = client.patch(
+        "/api/admin/ai-settings",
+        json={
+            "feature_access": {
+                "owner": ["rewrite", "summarize", "translate", "restructure", "continue"],
+                "editor": ["summarize", "translate", "restructure", "continue"],
+                "commenter": [],
+                "viewer": [],
+            }
+        },
+        headers=admin_headers,
+    )
+    assert patched.status_code == 200
+
+    blocked = client.post("/api/ai/rewrite", json={"selectedText": "Blocked", "versionId": 1}, headers=user_headers)
+    assert blocked.status_code == 403
+    assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"
+
+
+def test_restore_document_and_realtime_session(monkeypatch):
+    client = create_test_client(monkeypatch, auth_required=True)
+
+    owner_login = client.post(
+        "/api/auth/login",
+        json={"email": "atharv.dev@local", "password": "atharv-preview-pass"},
+    )
+    headers = auth_headers(owner_login.json()["accessToken"])
+
+    created = client.post("/api/documents", json={"title": "Spec Draft"}, headers=headers)
+    assert created.status_code == 201
+    doc_id = created.json()["id"]
+
+    deleted = client.delete(f"/api/documents/{doc_id}", headers=headers)
+    assert deleted.status_code == 204
+
+    listed_after_delete = client.get("/api/documents", headers=headers)
+    assert all(item["id"] != doc_id for item in listed_after_delete.json())
+
+    restored = client.post(f"/api/documents/{doc_id}/restore", headers=headers)
+    assert restored.status_code == 200
+    assert restored.json()["restored"] is True
+
+    session = client.post("/api/realtime/session", json={"doc_id": doc_id}, headers=headers)
+    assert session.status_code == 200
+    session_body = session.json()
+    assert session_body["doc_id"] == doc_id
+    assert session_body["role"] == "owner"
+    assert session_body["token_query_param"] == "token"
+    assert session_body["ws_url"].startswith(f"ws://localhost:1234/doc/{doc_id}?token=")
+
+
+def test_admin_can_update_ai_settings(monkeypatch):
+    client = create_test_client(monkeypatch, auth_required=True)
+
+    owner_login = client.post(
+        "/api/auth/login",
+        json={"email": "atharv.dev@local", "password": "atharv-preview-pass"},
+    )
+    headers = auth_headers(owner_login.json()["accessToken"])
+
+    fetched = client.get("/api/admin/ai-settings", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["feature_access"]["editor"] == [
+        "rewrite",
+        "summarize",
+        "translate",
+        "restructure",
+        "continue",
+    ]
+
+    updated = client.patch(
+        "/api/admin/ai-settings",
+        json={"feature_access": {"owner": ["rewrite"], "editor": ["rewrite"], "commenter": [], "viewer": []}},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["feature_access"]["editor"] == ["rewrite"]
+
+    writer = client.post(
+        "/api/auth/register",
+        json={"email": "policy@example.com", "password": "PreviewPass123!", "name": "Policy"},
+    )
+    writer_headers = auth_headers(writer.json()["accessToken"])
+    blocked = client.post("/api/ai/summarize", json={"doc_id": "doc-001", "selection": {"text": "Hello"}}, headers=writer_headers)
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"

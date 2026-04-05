@@ -25,7 +25,7 @@ require('dotenv').config({ path: '../../.env' });
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const { setupWSConnection, docs } = require('y-websocket/bin/utils');
-const { bindPersistence, forceFlush, closePool } = require('./persistence');
+const { bindPersistence, forceFlush, closePool, persistenceEnabled } = require('./persistence');
 
 // -------------------------------------------------------------------
 // Configuration
@@ -145,6 +145,9 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PORT, () => {
   console.log(`[server] y-websocket collaboration server running on port ${PORT}`);
   console.log(`[server] Health check: http://localhost:${PORT}/health`);
+  if (!persistenceEnabled) {
+    console.log('[server] Snapshot persistence disabled for this run (no DATABASE_URL / COLLAB_SYSTEM_USER_ID)');
+  }
 });
 
 // -------------------------------------------------------------------

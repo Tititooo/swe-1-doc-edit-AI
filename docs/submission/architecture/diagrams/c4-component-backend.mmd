@@ -1,0 +1,38 @@
+C4Component
+title Collaborative Document Editor - FastAPI Backend Component Diagram
+
+Container_Ext(spa, "React SPA", "Browser client", "Invokes REST and SSE endpoints")
+System_Ext(groq, "Groq LLM API", "External LLM provider")
+ContainerDb_Ext(db, "PostgreSQL", "Managed relational database", "Stores users, documents, versions, permissions, AI logs, and org policies")
+
+Container_Boundary(api_boundary, "FastAPI Backend") {
+    Component(router, "API Router Layer", "FastAPI routes", "Registers endpoint surfaces and binds request and response schemas")
+    Component(auth, "Auth Middleware", "JWT + RBAC guards", "Authenticates users, refreshes session context, and enforces per-document permissions")
+    Component(docs, "Document Controller", "Application service", "Handles document CRUD, version history, revert, and export")
+    Component(users, "User Controller", "Application service", "Handles registration, login, refresh, and profile access")
+    Component(perms, "Permission Controller", "Application service", "Handles share flows, role changes, and organization policy updates")
+    Component(ai_ctrl, "AI Controller", "SSE application service", "Starts AI requests, streams tokens, handles cancellation, and records user feedback")
+    Component(ai_service, "AI Service", "Domain service", "Builds AI jobs, enforces quota, normalizes responses, and selects prompt strategy")
+    Component(prompts, "Prompt Engine", "Template library", "Constructs feature-specific prompts from selection, context, and policy")
+    Component(groq_client, "Groq API Client", "Async HTTP client", "Calls Groq with retries, timeouts, and streaming support")
+    Component(repo, "Repository Layer", "SQLAlchemy repositories", "Single persistence boundary for users, documents, permissions, versions, AI logs, and org policies")
+}
+
+Rel(spa, router, "Calls REST and SSE endpoints", "HTTPS")
+Rel(router, auth, "Applies auth and role checks", "Depends() / middleware")
+Rel(router, docs, "Routes document requests")
+Rel(router, users, "Routes auth and profile requests")
+Rel(router, perms, "Routes permission and policy requests")
+Rel(router, ai_ctrl, "Routes AI requests")
+Rel(auth, docs, "Supplies authenticated user and document role context")
+Rel(auth, perms, "Supplies owner and admin authorization context")
+Rel(auth, ai_ctrl, "Supplies invoke-AI authorization context")
+Rel(docs, repo, "Reads and writes document metadata and versions")
+Rel(users, repo, "Reads and writes user and session data")
+Rel(perms, repo, "Reads and writes permissions and org policy state")
+Rel(ai_ctrl, ai_service, "Creates AI jobs and handles cancel actions")
+Rel(ai_ctrl, repo, "Persists AI interaction logs and feedback")
+Rel(ai_service, prompts, "Builds feature-specific prompts")
+Rel(ai_service, groq_client, "Requests model inference")
+Rel(groq_client, groq, "Streams completions", "HTTPS")
+Rel(repo, db, "Persists application state", "SQL")
