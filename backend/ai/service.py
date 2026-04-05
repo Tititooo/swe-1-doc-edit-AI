@@ -124,3 +124,60 @@ class AIService:
 
     async def cancel(self, suggestion_id: str) -> bool:
         return await self._registry.cancel(suggestion_id)
+
+
+class FakeAIService:
+    def __init__(self, registry: SuggestionRegistry | None = None) -> None:
+        self._registry = registry or SuggestionRegistry()
+
+    @property
+    def configured(self) -> bool:
+        return True
+
+    async def complete_feature(
+        self,
+        feature: FeatureName,
+        selected_text: str,
+        *,
+        style: str | None = None,
+        notes: str | None = None,
+        target_lang: str | None = None,
+        instructions: str | None = None,
+        document_text: str | None = None,
+    ) -> str:
+        suffix = style or target_lang or instructions or notes or "clean"
+        base = (document_text or selected_text).strip()
+        return f"[{feature}:{suffix}] {base}".strip()
+
+    async def stream_feature(
+        self,
+        feature: FeatureName,
+        selected_text: str,
+        *,
+        style: str | None = None,
+        target_lang: str | None = None,
+        instructions: str | None = None,
+    ) -> tuple[SuggestionHandle, AsyncIterator[str]]:
+        handle = await self._registry.create(feature)
+        response = await self.complete_feature(
+            feature,
+            selected_text,
+            style=style,
+            target_lang=target_lang,
+            instructions=instructions,
+        )
+
+        async def iterator() -> AsyncIterator[str]:
+            try:
+                for token in response.split(" "):
+                    if handle.cancel_event.is_set():
+                        break
+                    yield f"{token} "
+                    await asyncio.sleep(0.01)
+            finally:
+                await self._registry.clear(handle.suggestion_id)
+
+        return handle, iterator()
+
+    async def cancel(self, suggestion_id: str) -> bool:
+        return await self._registry.cancel(suggestion_id)

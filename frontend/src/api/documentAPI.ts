@@ -7,10 +7,9 @@
 import type {
   AIFeature,
   AIHistoryItem,
-  AIRewriteRequest,
-  AIRewriteResponse,
   APIError,
   Document,
+  DocumentListItem,
   UpdateDocumentPayload,
 } from '../types/document'
 import * as mockAPI from './mockAPI'
@@ -39,37 +38,96 @@ interface HistoryFilters {
   status?: string
 }
 
-export const fetchDocument = async (): Promise<Document> => {
+interface DocumentListResponse {
+  id: string
+  title: string
+  role: 'owner' | 'editor' | 'commenter' | 'viewer'
+  updated_at: string
+}
+
+interface DocumentDetailResponse {
+  id: string
+  title: string
+  content: string
+  updated_at: string
+  version_id: number
+}
+
+interface DocumentMutationResponse {
+  id: string
+  title: string
+  content: string
+  versionId: number
+  lastModified: string
+}
+
+const toDocument = (payload: DocumentDetailResponse | DocumentMutationResponse): Document => ({
+  id: payload.id,
+  title: payload.title,
+  content: payload.content,
+  versionId: 'version_id' in payload ? payload.version_id : payload.versionId,
+  lastModified: 'updated_at' in payload ? payload.updated_at : payload.lastModified,
+})
+
+export const fetchDocuments = async (): Promise<DocumentListItem[]> => {
   try {
     if (MOCK_MODE) {
-      return await mockAPI.mockFetchDocument()
+      return await mockAPI.mockListDocuments()
     }
-    const response = await apiClient.get<Document>('/document')
-    return response.data
+    const response = await apiClient.get<DocumentListResponse[]>('/documents')
+    return response.data.map((item) => ({
+      id: item.id,
+      title: item.title,
+      role: item.role,
+      updatedAt: item.updated_at,
+    }))
   } catch (error) {
     throw handleAPIError(error)
   }
 }
 
-export const updateDocument = async (payload: UpdateDocumentPayload): Promise<Document> => {
+export const createDocument = async (title: string): Promise<Document> => {
   try {
     if (MOCK_MODE) {
-      return await mockAPI.mockUpdateDocument(payload.content, payload.versionId)
+      return await mockAPI.mockCreateDocument(title)
     }
-    const response = await apiClient.put<Document>('/document', payload)
-    return response.data
+    const response = await apiClient.post<{ id: string }>('/documents', { title })
+    return await fetchDocument(response.data.id)
   } catch (error) {
     throw handleAPIError(error)
   }
 }
 
-export const requestAIRewrite = async (request: AIRewriteRequest): Promise<AIRewriteResponse> => {
+export const fetchDocument = async (docId: string): Promise<Document> => {
   try {
     if (MOCK_MODE) {
-      return await mockAPI.mockRequestAIRewrite(request)
+      return await mockAPI.mockFetchDocument(docId)
     }
-    const response = await apiClient.post<AIRewriteResponse>('/ai/rewrite', request)
-    return response.data
+    const response = await apiClient.get<DocumentDetailResponse>(`/documents/${docId}`)
+    return toDocument(response.data)
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const loadInitialDocument = async (): Promise<Document> => {
+  const documents = await fetchDocuments()
+  const newest = [...documents].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+
+  if (newest) {
+    return fetchDocument(newest.id)
+  }
+
+  return createDocument('Working Draft')
+}
+
+export const updateDocument = async (docId: string, payload: UpdateDocumentPayload): Promise<Document> => {
+  try {
+    if (MOCK_MODE) {
+      return await mockAPI.mockUpdateDocument(docId, payload.content, payload.versionId)
+    }
+    const response = await apiClient.put<DocumentMutationResponse>(`/documents/${docId}`, payload)
+    return toDocument(response.data)
   } catch (error) {
     throw handleAPIError(error)
   }
@@ -141,11 +199,11 @@ export const streamAIAction = async ({
     }
 
     buffer += decoder.decode(value, { stream: true })
-    const events = buffer.split('\n\n')
+    const events = buffer.split(/\r?\n\r?\n/)
     buffer = events.pop() || ''
 
     for (const rawEvent of events) {
-      const lines = rawEvent.split('\n').filter(Boolean)
+      const lines = rawEvent.split(/\r?\n/).filter(Boolean)
       const eventLine = lines.find((line) => line.startsWith('event:'))
       const dataLine = lines.find((line) => line.startsWith('data:'))
       if (!eventLine || !dataLine) continue
@@ -208,13 +266,13 @@ export const fetchAIHistory = async (limit = 10, filters: HistoryFilters = {}): 
   }
 }
 
-export const checkDocumentVersion = async (): Promise<{ versionId: number }> => {
+export const checkDocumentVersion = async (docId: string): Promise<{ versionId: number }> => {
   try {
     if (MOCK_MODE) {
-      return await mockAPI.mockCheckDocumentVersion()
+      return await mockAPI.mockCheckDocumentVersion(docId)
     }
-    const response = await apiClient.get<{ versionId: number }>('/document/version')
-    return response.data
+    const response = await apiClient.get<DocumentDetailResponse>(`/documents/${docId}`)
+    return { versionId: response.data.version_id }
   } catch (error) {
     throw handleAPIError(error)
   }

@@ -6,7 +6,6 @@ import { ConflictWarningBanner } from './components/ConflictWarningBanner'
 import { ErrorBanner } from './components/ErrorBanner'
 import { ExperimentalTiptapEditor } from './components/ExperimentalTiptapEditor'
 import { LoadDocumentButton } from './components/LoadDocumentButton'
-import { TextAreaEditor } from './components/TextAreaEditor'
 import { useAI } from './hooks/useAI'
 import { useAuth } from './hooks/useAuth'
 import { useDocument } from './hooks/useDocument'
@@ -61,7 +60,6 @@ function App() {
   const [selection, setSelection] = useState<TextSelection | null>(null)
   const [localErrorMessage, setLocalErrorMessage] = useState<string | null>(null)
   const [isUpdateLoading, setIsUpdateLoading] = useState(false)
-  const [editorMode, setEditorMode] = useState<'plain' | 'rich'>('plain')
 
   const selectedText = selection?.text || ''
 
@@ -95,10 +93,10 @@ function App() {
     setSelection(null)
     setLocalErrorMessage(null)
     clearConflict()
-    await loadDocument()
+    await loadDocument(document?.id ?? null)
     await refreshHistory()
     resetAI()
-  }, [clearConflict, loadDocument, refreshHistory, resetAI])
+  }, [clearConflict, document?.id, loadDocument, refreshHistory, resetAI])
 
   const handleSelectText = useCallback((nextSelection: TextSelection | null) => {
     setSelection(nextSelection)
@@ -111,35 +109,31 @@ function App() {
           ? content.slice(Math.max(0, content.length - 600))
           : options.documentText
 
-      await requestRewrite(document?.id ?? null, selectedText, versionId, {
+      await requestRewrite(document?.id ?? null, selectedText, {
         ...options,
         documentText: continueContext,
       })
     },
-    [content, document?.id, requestRewrite, selectedText, versionId]
+    [content, document?.id, requestRewrite, selectedText]
   )
 
   const handleApplyRewrite = useCallback(
     async (newText: string) => {
-      if (versionId === null) {
+      if (document?.id === undefined || versionId === null) {
         setLocalErrorMessage('Load a document before applying an AI result.')
         return
       }
 
-      const conflict = await checkConflict(versionId)
+      const conflict = await checkConflict(document.id, versionId)
       if (conflict) {
         return
       }
 
-      const updatedContent = selection
-        ? content.slice(0, selection.start) + newText + content.slice(selection.end)
-        : `${content.trimEnd()}\n\n${newText}`.trim()
-
       setIsUpdateLoading(true)
       setLocalErrorMessage(null)
       try {
-        const updatedDocument = await updateDocument({
-          content: updatedContent,
+        const updatedDocument = await updateDocument(document.id, {
+          content: newText,
           versionId,
         })
 
@@ -155,7 +149,7 @@ function App() {
         setIsUpdateLoading(false)
       }
     },
-    [checkConflict, clearConflict, content, markSuggestion, resetAI, selection, syncDocument, versionId]
+    [checkConflict, clearConflict, document?.id, markSuggestion, resetAI, syncDocument, versionId]
   )
 
   const handleTextChange = useCallback(
@@ -220,13 +214,6 @@ function App() {
                   isLoading={loading}
                   hasDocument={!!document}
                 />
-                <button
-                  className="load-button"
-                  onClick={() => setEditorMode((mode) => (mode === 'plain' ? 'rich' : 'plain'))}
-                  type="button"
-                >
-                  {editorMode === 'plain' ? 'Rich Editor Live Sync' : 'Plain Editor'}
-                </button>
                 <button className="load-button" onClick={handleLogout} type="button">
                   Sign Out
                 </button>
@@ -248,13 +235,6 @@ function App() {
                 isLoading={loading}
                 hasDocument={!!document}
               />
-              <button
-                className="load-button"
-                onClick={() => setEditorMode((mode) => (mode === 'plain' ? 'rich' : 'plain'))}
-                type="button"
-              >
-                {editorMode === 'plain' ? 'Rich Editor Live Sync' : 'Plain Editor'}
-              </button>
             </>
           )}
         </div>
@@ -295,29 +275,20 @@ function App() {
         ) : (
           <div className="editor-layout">
             <div className="editor-section">
-              {editorMode === 'plain' ? (
-                <TextAreaEditor
-                  content={content}
-                  onChange={handleTextChange}
-                  onSelect={handleSelectText}
-                  placeholder="Content will appear here..."
-                  disabled={isUpdateLoading}
-                />
-              ) : (
-                <ExperimentalTiptapEditor
-                  documentId={document?.id ?? null}
-                  content={content}
-                  selection={selection}
-                  aiResponse={aiResponse}
-                  activeFeature={activeFeature}
-                  isStreaming={aiLoading}
-                  onChange={handleTextChange}
-                  onSelect={handleSelectText}
-                  onAccept={handleApplyRewrite}
-                  onReject={() => void handleRejectSuggestion()}
-                  disabled={isUpdateLoading}
-                />
-              )}
+              <ExperimentalTiptapEditor
+                documentId={document?.id ?? null}
+                content={content}
+                selection={selection}
+                aiResponse={aiResponse}
+                activeFeature={activeFeature}
+                isStreaming={aiLoading}
+                onChange={handleTextChange}
+                onSelect={handleSelectText}
+                onAccept={handleApplyRewrite}
+                onClearPreview={resetAI}
+                onReject={() => void handleRejectSuggestion()}
+                disabled={isUpdateLoading}
+              />
             </div>
 
             <AISidebar
@@ -340,8 +311,8 @@ function App() {
       <footer className="app-footer">
         <span className="version-info">
           {document &&
-            `${editorMode === 'rich' ? `Sync: ${collaborationStatus}` : `Version: ${versionId}`}${
-              editorMode === 'rich' && presenceCount ? ` · ${presenceCount} peers` : ''
+            `Sync: ${collaborationStatus}${presenceCount ? ` · ${presenceCount} peers` : ''}${
+              versionId ? ` · Version ${versionId}` : ''
             }`}
         </span>
       </footer>

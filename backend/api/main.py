@@ -15,7 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from ai.groq_client import GroqChatClient, GroqClientError
 from ai.quota import AIQuotaExceededError, estimate_tokens
-from ai.service import AIService
+from ai.service import AIService, FakeAIService
 
 from .auth import AuthError, AuthSubject, create_access_token, create_refresh_token, decode_token
 from .config import Settings
@@ -26,12 +26,10 @@ from .schemas import (
     AISettingsResponse,
     AuthRequest,
     AuthResponse,
-    CompatibilityDocumentResponse,
-    CompatibilityRewriteRequest,
-    CompatibilityRewriteResponse,
     ContinueRequest,
     CreateDocumentRequest,
     CreateSnapshotRequest,
+    DocumentContentResponse,
     DocumentCreateResponse,
     DocumentDetailResponse,
     DocumentListItem,
@@ -57,7 +55,6 @@ from .schemas import (
     TranslateRequest,
     UpdateDocumentPayload,
     UserResponse,
-    VersionResponse,
 )
 from .store import InMemoryDocumentStore, VersionConflictError
 
@@ -77,28 +74,10 @@ def _extract_selection_text(payload: dict[str, Any]) -> str:
     )
 
 
-def _extract_compat_text(payload: CompatibilityRewriteRequest) -> str:
-    if payload.feature == "continue":
-        if payload.documentText and payload.documentText.strip():
-            return payload.documentText.strip()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"message": "documentText is required for continue mode", "code": "INVALID_REQUEST"},
-        )
-
-    if payload.selectedText.strip():
-        return payload.selectedText.strip()
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"message": "selectedText is required for this AI action", "code": "INVALID_REQUEST"},
-    )
-
-
 def create_app() -> FastAPI:
     settings = Settings.from_env()
     store = InMemoryDocumentStore()
-    ai_service = AIService(GroqChatClient(settings))
+    ai_service = FakeAIService() if settings.ai_fake_mode else AIService(GroqChatClient(settings))
     runtime = AppRuntime(settings)
 
     @asynccontextmanager
@@ -579,41 +558,8 @@ def create_app() -> FastAPI:
         )
         return AISettingsResponse.model_validate(updated)
 
-    @app.get("/api/document", response_model=CompatibilityDocumentResponse)
-    async def get_document(request: Request) -> CompatibilityDocumentResponse:
-        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        doc_id = get_runtime(request).preview_doc_id
-        await require_document_role(request, doc_id=doc_id, user=user)
-        return await get_store(request).get_document(doc_id)
-
-    @app.put("/api/document", response_model=CompatibilityDocumentResponse)
-    async def put_document(payload: UpdateDocumentPayload, request: Request) -> CompatibilityDocumentResponse:
-        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        doc_id = get_runtime(request).preview_doc_id
-        await require_document_role(
-            request,
-            doc_id=doc_id,
-            user=user,
-            allowed={"owner", "editor"},
-            denied_message="Your role cannot edit this document.",
-        )
-        try:
-            return await get_store(request).update_document(doc_id, payload.content, payload.versionId, user.id)
-        except VersionConflictError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"message": str(exc), "code": "VERSION_CONFLICT"},
-            ) from exc
-
-    @app.get("/api/document/version", response_model=VersionResponse)
-    async def get_document_version(request: Request) -> VersionResponse:
-        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-        doc_id = get_runtime(request).preview_doc_id
-        await require_document_role(request, doc_id=doc_id, user=user)
-        return VersionResponse(versionId=await get_store(request).get_version(doc_id))
-
-    @app.put("/api/documents/{doc_id}", response_model=CompatibilityDocumentResponse)
-    async def update_document_by_id(doc_id: str, payload: UpdateDocumentPayload, request: Request) -> CompatibilityDocumentResponse:
+    @app.put("/api/documents/{doc_id}", response_model=DocumentContentResponse)
+    async def update_document_by_id(doc_id: str, payload: UpdateDocumentPayload, request: Request) -> DocumentContentResponse:
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
         await require_document_role(
             request,
@@ -733,74 +679,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/ai/rewrite")
     async def rewrite(request: Request):
-        state_ai_service = get_ai_service(request)
         body = await request.json()
-
-        if "selectedText" in body:
-            payload = CompatibilityRewriteRequest.model_validate(body)
-            user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
-            doc_id = get_runtime(request).preview_doc_id
-            role = await require_document_role(
-                request,
-                doc_id=doc_id,
-                user=user,
-                allowed={"owner", "editor"},
-                denied_message="Your role cannot use AI features.",
-            )
-            await ensure_ai_feature_enabled(request, feature=payload.feature, role=role)
-            selected_text = _extract_compat_text(payload)
-            state_runtime = get_runtime(request)
-            try:
-                await state_runtime.enforce_quota(user.id, estimate_tokens(selected_text))
-                interaction_id = await state_runtime.begin_interaction(
-                    user_id=user.id,
-                    doc_id=doc_id,
-                    feature=payload.feature,
-                    input_text=selected_text,
-                )
-                result = await state_ai_service.complete_feature(
-                    payload.feature,
-                    selected_text,
-                    style=payload.style,
-                    notes=payload.notes,
-                    target_lang=payload.targetLanguage,
-                    instructions=payload.notes,
-                    document_text=payload.documentText,
-                )
-                await state_runtime.complete_interaction(
-                    interaction_id,
-                    result,
-                    estimate_tokens(selected_text, result),
-                    user_id=user.id,
-                )
-                return JSONResponse(
-                    CompatibilityRewriteResponse(
-                        success=True,
-                        result=result,
-                        feature=payload.feature,
-                        suggestionId=interaction_id,
-                    ).model_dump()
-                )
-            except GroqClientError as exc:
-                return JSONResponse(
-                    CompatibilityRewriteResponse(
-                        success=False,
-                        error=str(exc),
-                        message=str(exc),
-                        feature=payload.feature,
-                    ).model_dump(),
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            except AIQuotaExceededError as exc:
-                return JSONResponse(
-                    CompatibilityRewriteResponse(
-                        success=False,
-                        error=str(exc),
-                        message=str(exc),
-                        feature=payload.feature,
-                    ).model_dump(),
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
 
         StreamingRewriteRequest.model_validate(body)
         return await stream_feature("rewrite", body, request)

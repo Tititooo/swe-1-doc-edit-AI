@@ -11,21 +11,17 @@ OrgRoleName = Literal["admin", "member"]
 FeatureName = Literal["rewrite", "summarize", "translate", "restructure", "continue"]
 
 
-class CompatibilityDocumentResponse(BaseModel):
+class DocumentContentResponse(BaseModel):
     id: str
     content: str
     versionId: int
     lastModified: str
-    title: str | None = None
+    title: str
 
 
 class UpdateDocumentPayload(BaseModel):
     content: str = Field(min_length=0)
     versionId: int = Field(ge=1)
-
-
-class VersionResponse(BaseModel):
-    versionId: int
 
 
 class CreateDocumentRequest(BaseModel):
@@ -134,28 +130,6 @@ class RealtimeSessionResponse(BaseModel):
     expires_at: str
     token_query_param: Literal["token"] = "token"
     awareness_user: RealtimeAwarenessUser
-
-
-CompatibilityFeature = FeatureName
-
-
-class CompatibilityRewriteRequest(BaseModel):
-    selectedText: str = ""
-    versionId: int = Field(ge=1)
-    feature: CompatibilityFeature = "rewrite"
-    style: str | None = None
-    notes: str | None = None
-    targetLanguage: str | None = None
-    documentText: str | None = None
-
-
-class CompatibilityRewriteResponse(BaseModel):
-    success: bool
-    result: str | None = None
-    error: str | None = None
-    message: str | None = None
-    feature: CompatibilityFeature | None = None
-    suggestionId: str | None = None
 
 
 class SelectionPayload(BaseModel):

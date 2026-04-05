@@ -4,10 +4,17 @@
 
 export interface Document {
   id: string
+  title: string
   content: string
   versionId: number
   lastModified: string
-  title?: string
+}
+
+export interface DocumentListItem {
+  id: string
+  title: string
+  role: 'owner' | 'editor' | 'commenter' | 'viewer'
+  updatedAt: string
 }
 
 export interface TextSelection {
@@ -46,22 +53,6 @@ export interface APIError {
 export interface UpdateDocumentPayload {
   content: string
   versionId: number
-}
-
-export interface AIRewriteRequest {
-  selectedText: string
-  versionId: number
-  feature?: AIFeature
-  style?: string
-  notes?: string
-  targetLanguage?: string
-  documentText?: string
-}
-
-export interface AIRewriteResponse extends AIResponse {
-  result?: string
-  feature?: AIFeature
-  suggestionId?: string
 }
 
 export interface RealtimeAwarenessUser {

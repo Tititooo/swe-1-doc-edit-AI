@@ -6,7 +6,7 @@
 
 import { useState, useCallback } from 'react'
 import { Document, APIError } from '../types/document'
-import { fetchDocument } from '../api/documentAPI'
+import { fetchDocument, loadInitialDocument } from '../api/documentAPI'
 
 interface UseDocumentReturn {
   document: Document | null
@@ -14,7 +14,7 @@ interface UseDocumentReturn {
   versionId: number | null
   loading: boolean
   error: APIError | null
-  loadDocument: () => Promise<void>
+  loadDocument: (docId?: string | null) => Promise<void>
   setContent: (newContent: string) => void
   syncDocument: (nextDocument: Document) => void
   clearError: () => void
@@ -26,12 +26,12 @@ export const useDocument = (): UseDocumentReturn => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<APIError | null>(null)
 
-  const loadDocument = useCallback(async () => {
+  const loadDocument = useCallback(async (docId?: string | null) => {
     setLoading(true)
     setError(null)
 
     try {
-      const doc = await fetchDocument()
+      const doc = docId ? await fetchDocument(docId) : await loadInitialDocument()
       setDocument(doc)
     } catch (err) {
       setError(err as APIError)

@@ -10,7 +10,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .schemas import CompatibilityDocumentResponse, DocumentExportResult, DocumentVersionItem
+from .schemas import DocumentContentResponse, DocumentExportResult, DocumentVersionItem
 
 DEFAULT_DOCUMENT_CONTENT = (
     "The quick brown fox jumps over the lazy dog. "
@@ -39,8 +39,8 @@ class DocumentState:
     last_modified: datetime
     versions: list[VersionEntry] = field(default_factory=list)
 
-    def as_compat_response(self) -> CompatibilityDocumentResponse:
-        return CompatibilityDocumentResponse(
+    def as_content_response(self) -> DocumentContentResponse:
+        return DocumentContentResponse(
             id=self.id,
             title=self.title,
             content=self.content,
@@ -142,13 +142,13 @@ class InMemoryDocumentStore:
                 UUID(created_by),
             )
 
-    async def get_document(self, doc_id: str) -> CompatibilityDocumentResponse:
+    async def get_document(self, doc_id: str) -> DocumentContentResponse:
         if self._pool is None:
             async with self._lock:
                 document = self._documents.get(doc_id)
                 if document is None:
                     raise KeyError(doc_id)
-                return document.as_compat_response()
+                return document.as_content_response()
 
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -163,7 +163,7 @@ class InMemoryDocumentStore:
             )
         if row is None:
             raise KeyError(doc_id)
-        return CompatibilityDocumentResponse(
+        return DocumentContentResponse(
             id=str(row["id"]),
             title=row["title"],
             content=row["content"],
@@ -180,7 +180,7 @@ class InMemoryDocumentStore:
         content: str,
         version_id: int,
         user_id: str,
-    ) -> CompatibilityDocumentResponse:
+    ) -> DocumentContentResponse:
         if self._pool is None:
             async with self._lock:
                 document = self._documents.get(doc_id)
@@ -202,7 +202,7 @@ class InMemoryDocumentStore:
                         created_by=user_id,
                     )
                 )
-                return document.as_compat_response()
+                return document.as_content_response()
 
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -256,7 +256,7 @@ class InMemoryDocumentStore:
                 UUID(doc_id),
             )
 
-        return CompatibilityDocumentResponse(
+        return DocumentContentResponse(
             id=str(row["id"]),
             title=row["title"],
             content=row["content"],

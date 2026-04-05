@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 
@@ -56,6 +57,12 @@ def auth_headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
+def extract_suggestion_id(stream_body: str) -> str:
+    match = re.search(r'"suggestion_id":"([^"]+)"', stream_body)
+    assert match is not None
+    return match.group(1)
+
+
 def test_health_endpoint_reports_auth_requirement(monkeypatch):
     client = create_test_client(monkeypatch, auth_required=True)
 
@@ -69,17 +76,25 @@ def test_health_endpoint_reports_auth_requirement(monkeypatch):
 def test_document_routes_still_work_in_preview_mode(monkeypatch):
     client = create_test_client(monkeypatch, auth_required=False)
 
-    get_response = client.get("/api/document")
-    assert get_response.status_code == 200
-    assert get_response.json()["id"] == "doc-001"
+    list_response = client.get("/api/documents")
+    assert list_response.status_code == 200
+    document_id = list_response.json()[0]["id"]
 
-    update_response = client.put("/api/document", json={"content": "Updated content", "versionId": 1})
+    get_response = client.get(f"/api/documents/{document_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["id"] == document_id
+    assert get_response.json()["version_id"] == 1
+
+    update_response = client.put(
+        f"/api/documents/{document_id}",
+        json={"content": "Updated content", "versionId": 1},
+    )
     assert update_response.status_code == 200
     assert update_response.json()["versionId"] == 2
 
-    version_response = client.get("/api/document/version")
-    assert version_response.status_code == 200
-    assert version_response.json() == {"versionId": 2}
+    refreshed = client.get(f"/api/documents/{document_id}")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["version_id"] == 2
 
 
 def test_register_login_refresh_and_me(monkeypatch):
@@ -95,7 +110,8 @@ def test_register_login_refresh_and_me(monkeypatch):
     assert register_body["tokenType"] == "bearer"
     assert register_body["expiresIn"] == 15 * 60
 
-    unauthenticated_doc = client.get("/api/document")
+    preview_doc_id = client.app.state.runtime.preview_doc_id
+    unauthenticated_doc = client.get(f"/api/documents/{preview_doc_id}")
     assert unauthenticated_doc.status_code == 401
 
     login = client.post(
@@ -122,11 +138,19 @@ def test_rewrite_feedback_and_filtered_history(monkeypatch):
         json={"email": "history@example.com", "password": "PreviewPass123!", "name": "History"},
     ).json()
     headers = auth_headers(auth["accessToken"])
+    preview_doc_id = client.app.state.runtime.preview_doc_id
 
-    compat = client.post("/api/ai/rewrite", json={"selectedText": "Hello", "versionId": 1}, headers=headers)
-    assert compat.status_code == 200
-    suggestion_id = compat.json()["suggestionId"]
-    assert compat.json()["result"] == "rewrite:Hello"
+    with client.stream(
+        "POST",
+        "/api/ai/rewrite",
+        json={"doc_id": preview_doc_id, "selection": {"text": "Hello"}, "style": "formal"},
+        headers=headers,
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(line.decode() if isinstance(line, bytes) else line for line in response.iter_lines())
+
+    assert "event: token" in body
+    suggestion_id = extract_suggestion_id(body)
 
     feedback = client.post(
         "/api/ai/feedback",
@@ -159,11 +183,12 @@ def test_streaming_rewrite_and_cancel(monkeypatch):
         json={"email": "stream@example.com", "password": "PreviewPass123!", "name": "Stream"},
     ).json()
     headers = auth_headers(auth["accessToken"])
+    preview_doc_id = client.app.state.runtime.preview_doc_id
 
     with client.stream(
         "POST",
         "/api/ai/rewrite",
-        json={"doc_id": "doc-001", "selection": {"text": "Hello world"}, "style": "formal"},
+        json={"doc_id": preview_doc_id, "selection": {"text": "Hello world"}, "style": "formal"},
         headers=headers,
     ) as response:
         assert response.status_code == 200
@@ -203,8 +228,13 @@ def test_viewer_cannot_use_ai(monkeypatch):
         json={"email": "viewer@example.com", "password": "PreviewPass123!"},
     )
     headers = auth_headers(login.json()["accessToken"])
+    preview_doc_id = client.app.state.runtime.preview_doc_id
 
-    blocked = client.post("/api/ai/rewrite", json={"selectedText": "Hello", "versionId": 1}, headers=headers)
+    blocked = client.post(
+        "/api/ai/rewrite",
+        json={"doc_id": preview_doc_id, "selection": {"text": "Hello"}},
+        headers=headers,
+    )
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"
 
@@ -254,9 +284,16 @@ def test_admin_ai_settings_and_history_delete(monkeypatch):
     ).json()
     user_headers = auth_headers(user_auth["accessToken"])
 
-    compat = client.post("/api/ai/rewrite", json={"selectedText": "Hello", "versionId": 1}, headers=user_headers)
-    assert compat.status_code == 200
-    suggestion_id = compat.json()["suggestionId"]
+    preview_doc_id = client.app.state.runtime.preview_doc_id
+    with client.stream(
+        "POST",
+        "/api/ai/rewrite",
+        json={"doc_id": preview_doc_id, "selection": {"text": "Hello"}},
+        headers=user_headers,
+    ) as compat:
+        assert compat.status_code == 200
+        body = "".join(line.decode() if isinstance(line, bytes) else line for line in compat.iter_lines())
+    suggestion_id = extract_suggestion_id(body)
 
     history = client.get("/api/ai/history", headers=user_headers)
     assert history.status_code == 200
@@ -296,7 +333,11 @@ def test_admin_ai_settings_and_history_delete(monkeypatch):
     )
     assert patched.status_code == 200
 
-    blocked = client.post("/api/ai/rewrite", json={"selectedText": "Blocked", "versionId": 1}, headers=user_headers)
+    blocked = client.post(
+        "/api/ai/rewrite",
+        json={"doc_id": preview_doc_id, "selection": {"text": "Blocked"}},
+        headers=user_headers,
+    )
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"
 

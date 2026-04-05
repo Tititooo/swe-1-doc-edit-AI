@@ -57,7 +57,7 @@ npm run preview  # preview the build locally
 - ✓ TypeScript interfaces: `Document`, `AIResponse`, `APIError`
 - ✓ API client layer with Axios
 - ✓ Error handling wrapper
-- ✓ Endpoints: `GET /document`, `PUT /document`, `POST /ai/rewrite`, `GET /document/version`
+- ✓ Endpoints: `GET /documents`, `GET /documents/:id`, `PUT /documents/:id`, `POST /ai/rewrite`, `POST /realtime/session`
 
 ### 3. **State Management** (Phase 3)
 Three custom React hooks:
@@ -79,7 +79,7 @@ Three custom React hooks:
 | Component | Purpose | Story |
 |-----------|---------|-------|
 | `LoadDocumentButton` | Fetch button with spinner | US-01 |
-| `TextAreaEditor` | Text input with selection | US-02 |
+| `ExperimentalTiptapEditor` | Rich text editing with live sync | US-02 |
 | `AISidebar` | AI rewrite panel | US-03 |
 | `ConflictWarningBanner` | Version conflict alert | US-04 |
 | `ErrorBanner` | Error notification | US-05 |
@@ -96,7 +96,7 @@ All components:
 - ✓ Conflict check before apply
 - ✓ Error handling across all operations
 - ✓ Placeholder state when no document loaded
-- ✓ Layout: Editor on left, AI sidebar on right
+- ✓ Layout: Rich editor on left, AI sidebar on right
 
 ### 6. **Testing & Polish** (Phase 6)
 - ✓ Mock API for local development (`mockAPI.ts`)
@@ -123,7 +123,7 @@ All components:
 
 ---
 
-### US-02: Text Editing & Interaction ✓
+### US-02: Rich Text Editing & Interaction ✓
 
 **Acceptance Criteria:**
 - ✓ Standard typing and selection work
@@ -131,7 +131,7 @@ All components:
 - ✓ Deselection hides sidebar
 
 **Files:**
-- `frontend/src/components/TextAreaEditor.tsx`
+- `frontend/src/components/ExperimentalTiptapEditor.tsx`
 
 ---
 
@@ -184,7 +184,7 @@ frontend/
 ├── src/
 │   ├── components/
 │   │   ├── LoadDocumentButton.tsx      # US-01
-│   │   ├── TextAreaEditor.tsx          # US-02
+│   │   ├── ExperimentalTiptapEditor.tsx # US-02
 │   │   ├── AISidebar.tsx               # US-03
 │   │   ├── ConflictWarningBanner.tsx   # US-04
 │   │   ├── ErrorBanner.tsx             # US-05
@@ -306,10 +306,11 @@ npm run build
 Expected REST endpoints (backend needs to implement):
 
 ```
-GET  /api/document              → { id, content, versionId, ... }
-PUT  /api/document              → { id, content, versionId, ... }
-POST /api/ai/rewrite            → { success, result, error }
-GET  /api/document/version      → { versionId }
+GET  /api/documents             → [{ id, title, role, updated_at }]
+GET  /api/documents/:id         → { id, title, content, version_id, ... }
+PUT  /api/documents/:id         → { id, title, content, versionId, ... }
+POST /api/realtime/session      → { doc_id, ws_url, role, awareness_user, ... }
+POST /api/ai/rewrite            → SSE stream
 ```
 
 ---
@@ -348,10 +349,10 @@ VITE_ENV=development
 ## Known Limitations & Future Enhancements
 
 ### Current Limitations
-1. **Single-user:** No real-time sync with other editors (planned for Phase 2)
-2. **Basic text editor:** Using `<textarea>`, not rich text (upgrade to TipTap planned)
-3. **No persistence:** Changes not saved to localStorage (can add)
-4. **Mock AI:** Responses simulated (uses real OpenAI API in production via backend)
+1. **Tracked changes:** AI suggestions are still preview-first rather than final Yjs-native tracked marks.
+2. **Presence UX:** Live sync works, but collaborator chrome is still minimal.
+3. **Persistence model:** Rich-editor snapshots and REST document content are both maintained and can be unified further.
+4. **CI/e2e:** The smoke suite is intentionally narrow and should be expanded as the product matures.
 
 ### Planned Enhancements
 - ✓ WebSocket for real-time collaboration

@@ -33,6 +33,7 @@ class Settings:
     ai_org_monthly_token_budget: int
     ai_per_request_token_cap: int
     ai_require_auth: bool
+    ai_fake_mode: bool
     cors_origins: list[str]
     api_port: int
     collab_ws_url: str
@@ -55,6 +56,7 @@ class Settings:
             ai_org_monthly_token_budget=int(os.getenv("AI_ORG_MONTHLY_TOKEN_BUDGET", "1000000")),
             ai_per_request_token_cap=int(os.getenv("AI_PER_REQUEST_TOKEN_CAP", "4000")),
             ai_require_auth=_to_bool(os.getenv("AI_REQUIRE_AUTH"), False),
+            ai_fake_mode=_to_bool(os.getenv("AI_FAKE_MODE"), False),
             cors_origins=_split_csv(os.getenv("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173")),
             api_port=int(os.getenv("API_PORT", "4000")),
             collab_ws_url=os.getenv("COLLAB_WS_URL", "ws://127.0.0.1:1234"),

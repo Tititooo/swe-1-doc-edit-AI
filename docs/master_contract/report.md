@@ -182,561 +182,163 @@ March 2026
 
 #### Level 1 - System Context Diagram
 
+```mermaid
+C4Context
+title Collaborative Document Editor with AI Writing Assistant - System Context
+
+Person(user, "Document User", "Creates, edits, comments on, shares, and exports collaborative documents")
+Person(admin, "Organization Admin", "Configures AI feature availability, quota policy, and access rules")
+
+System_Ext(groq, "Groq LLM API", "Streams completions for rewrite, summarize, translate, and restructure operations")
+System_Ext(email, "Email Service (Future)", "Sends document share notifications and system emails")
+
+System_Boundary(editor_boundary, "Collaborative Editor Platform") {
+    System(editor, "Collaborative Document Editor", "Real-time collaborative editing platform with AI-assisted writing, version history, and role-based sharing")
+}
+
+Rel(user, editor, "Creates documents, edits collaboratively, invokes AI, reviews suggestions", "HTTPS + WSS")
+Rel(admin, editor, "Configures AI policy, quotas, and role permissions", "HTTPS")
+Rel(editor, groq, "Requests LLM inference through the backend proxy and receives streamed output", "HTTPS")
+Rel(editor, email, "Sends future notification emails", "HTTPS / SMTP")
 ```
 
----
-title: C4 Level 1 - system context
----
+![C4 Level 1 - System Context Diagram](diagrams/c4-context.png)
 
-graph TB
-  user["<lt><person>><gt><br/> <b>Document User</b> <br/> <small> Creates/edits docs,<br/> invokes AI, collaborates </small>"]
-
-```
-
-{8}------------------------------------------------
-
-admin["<<person>>  
-**Organization Admin**  
-Configures roles,  
-AI feature toggles,  
-quotas"]
-
-system["<<system>>  
-**Collaborative Document Editor**  
-Real-time collaborative editing  
-platform with integrated  
-AI writing assistant"]
-
-groq["<<external system>>  
-**Groq LLM API**  
-Receives prompt,  
-returns streamed completion"]
-
-email["<<external system>>  
-**Email Service (future)**  
-Sends sharing notifications"]
-
-```
-
-user -->|"HTTPS REST + WSS"| system
-admin -->|"HTTPS REST"| system
-system -->|"HTTPS"| groq
-system -->|"SMTP"| email
-
-```
-
-```
-
-style user fill:#08427b,color:#fff,stroke:#fff
-style admin fill:#08427b,color:#fff,stroke:#fff
-style system fill:#1168bd,color:#fff,stroke:#fff
-style groq fill:#999,color:#fff,stroke:#fff
-style email fill:#999,color:#fff,stroke:#fff
-
-```
-
-![C4 Level 1 - system context diagram](dbe553cf16dd14073b89a8263a428664_img.jpg)
-
-C4 Level 1 - system context
-
-```
-
-graph TD
-    user["<<person>>  
-Document User  
-Creates/edits docs,  
-invokes AI, collaborates"]
-    admin["<<person>>  
-Organization Admin  
-Configures roles,  
-AI feature toggles, quotas"]
-    system["<<system>>  
-Collaborative Document Editor  
-Real-time collaborative editing  
-platform with integrated  
-AI writing assistant"]
-    groq["<<external system>>  
-Groq LLM API  
-Receives prompt,  
-returns streamed completion"]
-    email["<<external system>>  
-Email Service (future)  
-Sends sharing notifications"]
-
-    user -->|"HTTPS REST + WSS"| system
-    admin -->|"HTTPS REST"| system
-    system -->|"HTTPS"| groq
-    system -->|"SMTP"| email
-
-    style user fill:#08427b,color:#fff,stroke:#fff
-    style admin fill:#08427b,color:#fff,stroke:#fff
-    style system fill:#1168bd,color:#fff,stroke:#fff
-    style groq fill:#999,color:#fff,stroke:#fff
-    style email fill:#999,color:#fff,stroke:#fff
-
-```
-
-C4 Level 1 - system context diagram
-
-The system interacts with two humans and two external systems. Document Users access the platform via HTTPS REST for standard operations and WSS for real-time synchronisation, while Organisation Admins interact exclusively via HTTPS REST to manage roles and quotas. The system makes outbound HTTPS calls to the Groq LLM API for AI processing, and will communicate with an Email Service via SMTP for sharing notifications in a future release.
+The current system boundary contains one product used by two human actor types. Document users interact with the editor, the AI assistant, and sharing/versioning functions. A separate organization-admin capability exists for AI policy configuration. The platform depends on Groq for inference and reserves an email integration for future sharing notifications.
 
 #### Level 2 - Container Diagram
 
----
+```mermaid
+C4Container
+title Collaborative Document Editor - Container Diagram
 
-title: C4 Level 2 - Containers
+Person(user, "Document User", "Collaborates on shared documents")
+Person(admin, "Organization Admin", "Configures role and AI policy settings")
+System_Ext(groq, "Groq LLM API", "External LLM inference provider")
+System_Ext(email, "Email Service (Future)", "Outbound notification provider")
 
----
+Container_Boundary(editor_boundary, "Collaborative Editor Platform") {
+    Container(spa, "React SPA", "React 18, Tiptap 2, Yjs, React Query, Zustand", "Browser UI for editing, presence, version review, auth, sharing, and AI suggestions")
+    Container(api, "FastAPI Backend", "Python 3.11, FastAPI, asyncpg, Pydantic", "Auth, document CRUD and content projection, AI proxy, permissions, realtime bootstrap, and admin APIs")
+    Container(collab, "Collaboration Server", "Node.js 20, y-websocket", "Synchronizes Yjs updates, awareness state, reconnect flows, and snapshot persistence")
+    ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Stores users, document metadata, document content projections, Yjs snapshots, permissions, AI logs, and singleton org AI settings")
+}
 
-graph TB
-
-user["<<person>>  
-**Document User**  
-Creates/edits docs,  
-invokes AI,"]
-
-{9}------------------------------------------------
-
+Rel(user, spa, "Uses editor and document workspace", "Browser")
+Rel(admin, spa, "Uses admin and sharing UI", "Browser")
+Rel(spa, api, "Calls auth, document, permissions, admin, export, and AI endpoints", "HTTPS / JSON + SSE")
+Rel(spa, collab, "Exchanges CRDT updates and presence state", "WSS / Yjs protocol")
+Rel(api, db, "Reads and writes metadata, document content projections, permissions, logs, and policies", "SQL")
+Rel(collab, db, "Persists and restores Yjs snapshots", "SQL")
+Rel(api, groq, "Builds prompts and streams model completions", "HTTPS")
+Rel(api, email, "Sends sharing notifications in a future release", "HTTPS / SMTP")
 ```
 
-user["<<person>>  
-User  
-Writes and  
-collaborates"]
+![C4 Level 2 - Container Diagram](diagrams/c4-container.png)
 
-admin["<<person>>  
-Organization Admin  
-Configures roles,  
-AI feature toggles,  
-quotas"]
-
-groq["<<external system>>  
-Groq LLM API  
-LLM inference,  
-streamed  
-completions"]
-
-subgraph system[" "]
-  spa["<<container>>  
-React SPA  
-React 18, Tiptap, Yjs,  
-React Query, Zustand  
-  
-Editor UI, Yjs client CRDT,  
-AI suggestion display,  
-doc management"]
-  api["<<container>>  
-FastAPI Backend  
-Python 3.12, FastAPI,  
-SQLAlchemy,  
-Pydantic  
-  
-Auth, doc CRUD, versions,  
-AI proxy, permissions, admin"]
-  collab["<<container>>  
-y-websocket Server  
-Node.js 20, y-websocket  
-  
-CRDT sync, presence  
-broadcast, snapshot persistence"]
-  db[("<<database>>  
-PostgreSQL  
-PostgreSQL 16, Render managed  
-  
-Users, docs, versions,  
-permissions, AI logs")]
-  systemlabel["Collaborative Document Editor"]
-end
-
-user -->|"HTTPS REST"| spa
-user <-->|"WebSocket - Yjs binary"| spa
-admin -->|"HTTPS REST"| spa
-spa -->|"HTTPS REST"| api
-spa <-->|"WebSocket - Yjs binary"| collab
-api -->|"HTTPS"| groq
-api -->|"SQL"| db
-collab -->|"SQL"| db
-
-style user fill:#08427b,color:#fff,stroke:#fff
-style admin fill:#08427b,color:#fff,stroke:#fff
-style groq fill:#999,color:#fff,stroke:#fff
-style spa fill:#1168bd,color:#fff,stroke:#fff
-style api fill:#1168bd,color:#fff,stroke:#fff
-style collab fill:#1168bd,color:#fff,stroke:#fff
-style db fill:#1168bd,color:#fff,stroke:#fff
-style system fill:#transparent,stroke:#1168bd,stroke-width:2px,color:#1168bd
-style systemlabel fill:#transparent,stroke:none,color:#1168bd,font-weight:bold
-
-```
-
-{10}------------------------------------------------
-
-![C4 Level 2 - Containers diagram showing the architecture of a collaborative document editor. It includes two external users (Document User and Organization Admin), a React SPA container, a FastAPI Backend container, a y-websocket Server container, a PostgreSQL database, and an external Groq LLM API system. The React SPA connects to the FastAPI Backend via HTTPS REST and to the y-websocket Server via WebSocket. The FastAPI Backend and y-websocket Server both connect to the PostgreSQL database via SQL. The FastAPI Backend also connects to the Groq LLM API via HTTPS.](cfef993dcc8fb513de79eb1f93cf26ae_img.jpg)
-
-C4 Level 2 - Containers
-
-```
-
-graph TD
-    subgraph C4_Level_2 [C4 Level 2 - Containers]
-        ReactSPA["<<container>>  
-React SPA  
-React 18, Tiptap, Yjs,  
-React Query, Zustand  
-  
-Editor UI, Yjs client CRDT,  
-AI suggestion display,  
-doc management"]
-        FastAPIBackend["<<container>>  
-FastAPI Backend  
-Python 3.12, FastAPI,  
-SQLAlchemy, Pydantic  
-  
-Auth, doc CRUD, versions,  
-AI proxy, permissions, admin"]
-        yWebsocketServer["<<container>>  
-y-websocket Server  
-Node.js 20, y-websocket  
-  
-CRDT sync, presence  
-broadcast, snapshot persistence"]
-        PostgreSQL["<<database>>  
-PostgreSQL  
-PostgreSQL 16, Render managed  
-  
-Users, docs, versions,  
-permissions, AI logs"]
-        ReactSPA -- "HTTPS REST" --> FastAPIBackend
-        ReactSPA -- "WebSocket - Yjs binary" --> yWebsocketServer
-        FastAPIBackend -- "HTTPS" --> GroqLLMAPI["<<external system>>  
-Groq LLM API  
-LLM inference,  
-streamed completions"]
-        FastAPIBackend -- "SQL" --> PostgreSQL
-        yWebsocketServer -- "SQL" --> PostgreSQL
-    end
-    DocumentUser["<<person>>  
-Document User  
-Creates/edits docs,  
-invokes AI, collaborates"]
-    OrganizationAdmin["<<person>>  
-Organization Admin  
-Configures roles,  
-AI feature toggles, quotas"]
-    DocumentUser -- "HTTPS REST" --> ReactSPA
-    DocumentUser -- "WebSocket - Yjs binary" --> ReactSPA
-    OrganizationAdmin -- "HTTPS REST" --> ReactSPA
-    CollaborativeDocumentEditor["Collaborative Document Editor"]
-    ReactSPA --- CollaborativeDocumentEditor
-  
-```
-
-C4 Level 2 - Containers diagram showing the architecture of a collaborative document editor. It includes two external users (Document User and Organization Admin), a React SPA container, a FastAPI Backend container, a y-websocket Server container, a PostgreSQL database, and an external Groq LLM API system. The React SPA connects to the FastAPI Backend via HTTPS REST and to the y-websocket Server via WebSocket. The FastAPI Backend and y-websocket Server both connect to the PostgreSQL database via SQL. The FastAPI Backend also connects to the Groq LLM API via HTTPS.
-
-The platform comprises four containers. The React SPA is the client-facing interface, connecting to the FastAPI Backend over HTTPS REST for data operations and to the y-websocket Server over a WebSocket connection for CRDT-based real-time synchronisation. The FastAPI Backend handles core business logic and proxies AI requests outbound to Groq. Both the backend and the collaboration server persist data to a shared PostgreSQL database.
+The current deployed system has four runtime containers. The browser talks to FastAPI for document, auth, permission, admin, and AI flows, and connects directly to the `y-websocket` service for rich-editor collaboration. PostgreSQL is shared by both services. The backend also maintains a strict REST document-content projection so the editor, export, and AI apply flows can reload authoritative text content while the collaboration server persists Yjs snapshots independently.
 
 #### Level 3 - Component Diagram
 
+```mermaid
+C4Component
+title Collaborative Document Editor - Current FastAPI Backend Component Diagram
+
+Container_Ext(spa, "React SPA", "Browser client", "Calls REST endpoints, opens SSE streams, and requests realtime session bootstrap")
+System_Ext(groq, "Groq LLM API", "External LLM provider")
+ContainerDb_Ext(db, "PostgreSQL", "Managed relational database", "Stores users, document metadata, document content projections, Yjs snapshots, permissions, AI logs, and org AI settings")
+
+Container_Boundary(api_boundary, "FastAPI Backend") {
+    Component(app, "FastAPI App", "backend/api/main.py", "Registers the current route surface, configures lifespan, CORS, and exception handling")
+    Component(auth, "Auth Module", "backend/api/auth.py", "Hashes passwords and issues or validates JWT access and refresh tokens")
+    Component(runtime, "Runtime Service", "backend/api/runtime.py", "Handles login and registration, document metadata, permissions, AI history, quotas, and admin AI settings")
+    Component(store, "Document Content Store", "backend/api/store.py", "Maintains the strict REST document content projection, version ids, and export helpers")
+    Component(schemas, "Schema Layer", "backend/api/schemas.py", "Defines request and response contracts used by the FastAPI routes")
+    Component(ai_service, "AI Service", "backend/ai/service.py", "Dispatches feature-specific AI operations and coordinates streaming or full completions")
+    Component(prompts, "Prompt Engine", "backend/ai/prompts.py", "Builds prompt templates for rewrite, summarize, translate, restructure, and continue-writing flows")
+    Component(groq_client, "Groq API Client", "backend/ai/groq_client.py", "Executes Groq requests with timeout handling and token streaming")
+}
+
+Rel(spa, app, "Calls HTTP endpoints and opens SSE streams", "HTTPS")
+Rel(app, schemas, "Validates request and response payloads")
+Rel(app, auth, "Uses JWT and password helpers")
+Rel(app, runtime, "Delegates auth, document metadata, permissions, quotas, and history logic")
+Rel(app, store, "Delegates strict document content load, save, versioning, and export logic")
+Rel(app, ai_service, "Starts AI requests and handles streaming responses")
+Rel(ai_service, prompts, "Constructs feature-specific prompts")
+Rel(ai_service, groq_client, "Requests model inference")
+Rel(runtime, db, "Reads and writes users, documents, permissions, AI logs, and admin policy state", "SQL")
+Rel(store, db, "Reads and writes document content projections and text versions", "SQL")
+Rel(groq_client, groq, "Streams completions", "HTTPS")
 ```
 
----
-title: C4 Level 3 - Components
----
-graph TB
-    spa["<lt><container>>  
-<b>React SPA</b>  
-<small>Sends HTTP requests,  
-<br>receives SSE streams</small>"]
-    groq["<lt><external system>>  
-<b>Groq LLM API</b>  
-<small>Streams completions</small>"]
-    db["<lt><database>>  
-<b>PostgreSQL</b>  
-<small>Persistent storage</small>"]
-    subgraph api ["FastAPI Backend"]
-        router["<lt><component>>  
-<b>API Router Layer</b>  
-<small>FastAPI route decorators  
-<br>Maps HTTP routes  
-<br>to controllers</small>"]
-        auth["<lt><component>>  
-<b>Auth Middleware</b>  
-<small>Depends() injection  
-<br>JWT validation, identity  
-<br>extraction, role-based access</small>"]
-        docctrl["<lt><component>>  
-<b>Document Controller</b>  
-<small>/documents/*  
-<br>Doc CRUD, version  
-<br>history, revert, export</small>"]
-        aictrl["<lt><component>>  
-<b>AI Controller</b>  
-<small>/ai/*  
-<br>AI invocation, SSE  
-<br>streaming, interaction logging</small>"]
-        userctrl["<lt><component>>  
-<b>User Controller</b>  
-<small>/auth/*, /users/*  
-<br>Registration, login,  
-<br>token refresh, profile</small>"]
-        permctrl["<lt><component>>  
-<b>Permission Controller</b>  
-<small>/documents/{id}/permissions/"]
-    end
-    spa -- "HTTPS REST" --> router
-    spa -- "WebSocket - Yjs binary" --> yWebsocketServer
-    spa -- "HTTPS REST" --> OrganizationAdmin
-    spa --- CollaborativeDocumentEditor
-    groq -- "HTTPS" --> docctrl
-    spa -- "SQL" --> db
-    docctrl -- "SQL" --> db
-    aictrl -- "SQL" --> db
-    userctrl -- "SQL" --> db
-    permctrl -- "SQL" --> db
-  
-```
+![C4 Level 3 - Backend Component Diagram](diagrams/c4-component-backend.png)
 
-{11}------------------------------------------------
-
-```
-
-*  
-
-<br/>Permission CRUD,<br/>role validation</small>"]
-aisvc["<lt><lt>component>>gt;<br/><b>AI Service</b><br/><small>Internal Python module<br/>
-<br/>Prompt construction,<br/>Groq calls, quota enforcement</small>"]
-prompt["<lt><lt>component>>gt;<br/><b>Prompt Engine</b><br/><small>Python functions<br/>
-
-<br/>Templates for rewrite,<br/>summarize, translate,<br/>restructure</small>"]
-groqclient["<lt><lt>component>>gt;<br/><b>Groq API Client</b><br/><small>Async Python class<br/>
-<br/>HTTP client, streaming,<br/>retry, timeout</small>"]
-repo["<lt><lt>component>>gt;<br/><b>Repository Layer</b><br/><small>Python classes w/ CRUD<br/>
-
-<br/>SQLAlchemy models +<br/>query methods.<br/>Single DB access point</small>"]
-end
-
-spa -->|"HTTPS REST + SSE"| router
-router --> auth
-auth --> docctrl
-auth --> aictrl
-auth --> userctrl
-auth --> permctrl
-aictrl --> aisvc
-aisvc --> prompt
-aisvc --> groqclient
-groqclient -->|"HTTPS"| groq
-docctrl --> repo
-aictrl --> repo
-userctrl --> repo
-permctrl --> repo
-aisvc --> repo
-repo -->|"SQL"| db
-
-style spa fill:#1168bd,color:#fff,stroke:#fff
-style groq fill:#999,color:#fff,stroke:#fff
-style db fill:#1168bd,color:#fff,stroke:#fff
-style router fill:#2a5fa5,color:#fff,stroke:#fff
-style auth fill:#2a5fa5,color:#fff,stroke:#fff
-style docctrl fill:#2a5fa5,color:#fff,stroke:#fff
-style aictrl fill:#2a5fa5,color:#fff,stroke:#fff
-style userctrl fill:#2a5fa5,color:#fff,stroke:#fff
-style permctrl fill:#2a5fa5,color:#fff,stroke:#fff
-style aisvc fill:#2a5fa5,color:#fff,stroke:#fff
-style prompt fill:#2a5fa5,color:#fff,stroke:#fff
-style groqclient fill:#2a5fa5,color:#fff,stroke:#fff
-style repo fill:#2a5fa5,color:#fff,stroke:#fff
-style api fill:#transparent,stroke:#1168bd,stroke-width:2px,color:#1168bd
-
-```
-
-{12}------------------------------------------------
-
-![C4 Level 3 Component Diagram for a FastAPI Backend architecture](4e4be0bd8b235167902f2c03e41da651_img.jpg)
-
-```
-
-graph TD
-    ReactSPA["<<container>>  
-React SPA  
-Sends HTTP requests,  
-receives SSE streams"] 
-    
-    subgraph FastAPI_Backend [FastAPI Backend]
-        APIRouter["<<component>>  
-API Router Layer  
-FastAPI route decorators  
-Maps HTTP routes  
-to controllers"]
-        
-        AuthMiddleware["<<component>>  
-Auth Middleware  
-Depends() injection  
-JWT validation, identity  
-extraction, role-based access"]
-        
-        AIController["<<component>>  
-AI Controller  
-/ai/*  
-AI invocation, SSE  
-streaming, interaction logging"]
-        
-        DocumentController["<<component>>  
-Document Controller  
-/documents/*  
-Doc CRUD, version  
-history, revert, export"]
-        
-        AIService["<<component>>  
-AI Service  
-Internal Python module  
-Prompt construction,  
-Groq calls, quota enforcement"]
-        
-        UserController["<<component>>  
-User Controller  
-/auth/, /users/  
-Registration, login,  
-token refresh, profile"]
-        
-        PermissionController["<<component>>  
-Permission Controller  
-/documents/{id}/permissions/*  
-Permission CRUD,  
-role validation"]
-        
-        PromptEngine["<<component>>  
-Prompt Engine  
-Python functions  
-Templates for rewrite,  
-summarize, translate,  
-restructure"]
-        
-        GroqAPIClient["<<component>>  
-Groq API Client  
-Async Python class  
-HTTP client, streaming,  
-retry, timeout"]
-        
-        RepositoryLayer["<<component>>  
-Repository Layer  
-Python classes w/ CRUD  
-SQLAlchemy models +  
-query methods.  
-Single DB access point"]
-    end
-
-    GroqLLM["<<external system>>  
-Groq LLM API  
-Streams completions"]
-    
-    PostgreSQL[("<<database>>  
-PostgreSQL  
-Persistent storage")]
-
-    ReactSPA -- "HTTPS REST + SSE" --> APIRouter
-    APIRouter --> AuthMiddleware
-    
-    AuthMiddleware --> DocumentController
-    AuthMiddleware --> AIController
-    AuthMiddleware --> UserController
-    AuthMiddleware --> PermissionController
-    
-    AIController --> AIService
-    AIController --> RepositoryLayer
-    
-    DocumentController --> RepositoryLayer
-    DocumentController --> PromptEngine
-    
-    AIService --> PromptEngine
-    AIService --> GroqAPIClient
-    AIService --> RepositoryLayer
-    
-    UserController --> RepositoryLayer
-    PermissionController --> RepositoryLayer
-    
-    PromptEngine --> GroqAPIClient
-    
-    GroqAPIClient -- "HTTPS" --> GroqLLM
-    RepositoryLayer -- "SQL" --> PostgreSQL
-    
-```
-
-C4 Level 3 Component Diagram for a FastAPI Backend architecture
-
-All inbound requests enter through the API Router Layer and pass through the Auth Middleware before reaching any controller. The four controllers - Document, AI, User, and Permission - each delegate persistence to the Repository Layer as the single database access point. The AI Controller further delegates to the AI Service, which constructs prompts via the Prompt Engine and executes LLM requests through the Groq API Client.
-
-{13}------------------------------------------------
+This component view reflects the code as it exists today, not a future refactor. `main.py` still owns route registration and request orchestration. `auth.py` handles password hashing and JWTs, `runtime.py` centralizes most metadata and permission logic, `store.py` owns the strict REST document-content projection, and `backend/ai/*` owns prompt construction plus Groq streaming.
 
 #### 2.2.1 Feature Decomposition
 
-The system will be decomposed into six modules, each with a clearly defined responsibility, set of dependencies, and exposed interface. This structure will allow each module to be developed and tested independently.
+The current proof-of-concept is organized into six practical modules that line up with the shipped codebase.
 
-**Rich-Text Editor.** The editor module will be built on Tiptap 2 (ProseMirror), extended with custom nodes for AI suggestion rendering and soft-lock indicators. It will be responsible for all user-facing editing interactions, including text input, selection, tracked-change display, and read-only enforcement per role. Frontend state will be managed across three Zustand stores: `authStore` (user identity and token), `editorStore` (document metadata and editor instance), and `aiStore` (AI suggestion state and streaming status). Server state, including document fetching and mutation, will be handled by React Query. This module will depend on the real-time synchronisation layer for CRDT integration and on the API layer for document CRUD operations. It will expose editor events and selection context to the AI module, and will render permission state received from the auth module.
+**Rich-text editor and frontend state management.** The frontend now exposes a single editing surface: `ExperimentalTiptapEditor`, the live-sync rich editor backed by Yjs. `App.tsx` coordinates authentication, document loading, AI invocation, and apply/reject flows. Client state is split between hook-local state (`useAuth`, `useDocument`, `useAI`, `useVersionConflict`) and a single Zustand store, `editorStore`, which tracks realtime connection status, active session metadata, and presence count. `useRealtimeSession` is the only part already wired through React Query.
 
-**Real-Time Synchronisation Layer.** This module will be responsible for propagating document edits between all connected clients with conflict-free guarantees. It will be implemented using Yjs on the client side, bound to the Tiptap editor via y-prosemirror, and synchronised through a y-websocket server. The CRDT will ensure that concurrent edits to the same region are merged deterministically without data loss. Presence information - cursor positions, selections, and connected users — will be broadcast via the Yjs Awareness protocol at no additional implementation cost. The y-websocket server will persist full Yjs state snapshots to PostgreSQL every 30 seconds when the document has changed. This module will depend on the database for snapshot storage and will expose a WebSocket interface to the React SPA. It will have no dependency on the FastAPI backend at runtime.
+**Real-time synchronisation layer.** Rich-mode collaboration uses a `Y.Doc`, a `WebsocketProvider`, and Tiptap collaboration extensions from `frontend/src/extensions/realtimeEditor.ts`. The browser first calls `POST /api/realtime/session` to obtain a role-scoped WSS URL and awareness identity. The Node-based collaboration server in `backend/collab/server.js` handles Yjs update propagation and awareness broadcasts. `backend/collab/persistence.js` restores and persists Yjs snapshots when PostgreSQL is configured, and falls back to ephemeral mode when it is not.
 
-**AI Assistant Service.** The AI module will manage the full lifecycle of AI feature invocations, from prompt construction to streaming delivery and interaction logging. It will be implemented as an internal Python module within the FastAPI backend, comprising the AI Controller, AI Service, Prompt Engine, and Groq API Client. When a user invokes an AI feature, the AI Controller will receive the request, delegate prompt construction to the Prompt Engine, and pass the result to the Groq API Client, which will stream the response back to the client via SSE. Every invocation will be logged to the `ai_interactions` table. This module will depend on the Repository Layer for quota enforcement and logging, and on the Groq LLM API as an external dependency. It will expose `/ai/*` endpoints to the frontend and will enforce per-user and per-organisation token quotas.
+**AI assistant service.** The current AI path is implemented in `backend/ai/service.py`, `backend/ai/prompts.py`, `backend/ai/groq_client.py`, and `backend/ai/quota.py`. On the frontend, `AISidebar` and `useAI` drive rewrite, summarize, translate, restructure, and continue-writing requests. The shipped user experience is preview-first: the response streams into the sidebar, can be cancelled, and can be applied or rejected. In the rich editor, that preview is also rendered inline during review. This is less ambitious than a true shared tracked-change CRDT mark model, but it is the current code path.
 
-**Document Storage and Versioning.** This module will handle a document lifecycle, including creation, retrieval, versioning, sharing, export, and soft deletion. Document content will not be stored as a database column - the canonical content will be the Yjs binary state persisted in the `document_versions` table. Version history will be append-only; revert operations will create a new snapshot rather than overwriting existing history. The module will be implemented through the Document Controller and Repository Layer within the FastAPI backend. It will depend on the authentication module for ownership verification and on the database for persistence. It will expose `/documents/*` endpoints to the frontend.
+**Document storage and versioning.** The implementation currently uses a strict REST document-content projection plus the rich-editor snapshot history. `backend/api/store.py` persists the reloadable text projection and version numbers via `document_live_content` and `document_text_versions`. In parallel, the collaboration server writes Yjs snapshots into `document_versions`. Metadata, permissions, and ownership remain in `documents` and `permissions`.
 
-**User Authentication and Authorisation.** This module will control identity verification and access enforcement across all system operations. Authentication will be stateless, using short-lived JWT access tokens (15 minutes) and rotating refresh tokens (7 days). Authorisation will be role-based and per-document, enforced on every API request via the Auth Middleware using FastAPI's `Depends()` injection mechanism. Four roles will be defined - owner, editor, commenter, and viewer - each with a distinct permission set covering editing, AI invocation, version management, sharing, and export. This module will be implemented through the User Controller and Auth Middleware. It will expose `/auth/*` and `/users/*` endpoints and will provide an authentication dependency consumed by all other controllers.
+**User authentication and authorization.** Authentication is stateless and JWT-based. `backend/api/auth.py` handles password hashing and token issue/validation, while `backend/api/runtime.py` manages registration, login, preview-user bootstrapping, per-document role resolution, and singleton organization-admin AI settings. The document roles enforced by the current code are `owner`, `editor`, `commenter`, and `viewer`.
+
+**API layer.** The FastAPI app in `backend/api/main.py` owns request routing, error mapping, and application lifecycle. It exposes auth, strict document CRUD, permissions, realtime bootstrap, AI streaming and feedback, AI history deletion, and admin policy routes. Pydantic schemas in `backend/api/schemas.py` define the live request and response contracts consumed by the frontend.
 
 **Role-Permission Matrix**
 
-| Action                     | Owner               | Editor | Commenter | Viewer |
-|----------------------------|---------------------|--------|-----------|--------|
-| View document              | ✓                   | ✓      | ✓         | ✓      |
-| Edit content               | ✓                   | ✓      | ✗         | ✗      |
-| Add comments               | ✓                   | ✓      | ✓         | ✗      |
-| Invoke AI                  | ✓                   | ✓      | ✗         | ✗      |
-| Accept / reject AI         | ✓                   | ✓      | ✗         | ✗      |
-| View version history       | ✓                   | ✓      | ✓         | ✗      |
-| Revert to version          | ✓                   | ✓      | ✗         | ✗      |
-| Share / manage permissions | ✓                   | ✗      | ✗         | ✗      |
-| Delete document            | ✓                   | ✗      | ✗         | ✗      |
-| Export                     | ✓                   | ✓      | ✓         | ✓      |
-| Configure AI               | Original Admin only |        |           |        |
+| Action                     | Owner | Editor | Commenter | Viewer |
+|----------------------------|-------|--------|-----------|--------|
+| View document              | ✓     | ✓      | ✓         | ✓      |
+| Edit content               | ✓     | ✓      | ✗         | ✗      |
+| Invoke AI                  | ✓     | ✓      | ✗         | ✗      |
+| Accept / reject AI         | ✓     | ✓      | ✗         | ✗      |
+| View version history       | ✓     | ✓      | ✓         | ✗      |
+| Revert to version          | ✓     | ✓      | ✗         | ✗      |
+| Share / manage permissions | ✓     | ✗      | ✗         | ✗      |
+| Delete or restore document | ✓     | ✗      | ✗         | ✗      |
+| Export                     | ✓     | ✓      | ✓         | ✓      |
 
-**API Layer.** The API layer will connect the React SPA to all backend services through a structured set of REST endpoints implemented in FastAPI. It will be responsible for request routing, input validation via Pydantic schemas, error normalisation, and SSE stream management for AI responses. All endpoints will return JSON; errors will follow a consistent format of `{error, code, (detail)}`. The API layer will depend on all backend modules and will expose a versioned HTTP interface to the frontend. Shared Pydantic-to-TypeScript type generation will ensure contract consistency across the boundary.
-
-{14}------------------------------------------------
+Organization-wide AI policy is not attached to a document role. It is exposed through the dedicated `/api/admin/ai-settings` endpoints and currently behaves as a singleton admin capability in `runtime.py`.
 
 ##### Decided Technology Stack
 
 | Layer              | Technology                     | Justification                                                                                                                                                                                                                               |
 |--------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Frontend Framework | React 18                       | Team familiarity; largest ecosystem; first-class Tiptap integration.                                                                                                                                                                        |
-| Rich Text Editor   | Tiptap 2 (ProseMirror)         | Native Yjs support via y-prosemirror; extensible for custom AI suggestion nodes; superior developer experience over raw ProseMirror.                                                                                                        |
+| Frontend Framework | React 18                       | Team familiarity; first-class Tiptap integration; reliable Vite and React Query support.                                                                                                                                                    |
+| Rich Text Editor   | Tiptap 2 (ProseMirror)         | Already integrated in the current codebase; works with the Yjs collaboration extensions currently in use.                                                                                                                                   |
 | CRDT Library       | Yjs 13                         | Most mature JavaScript CRDT; built-in awareness for cursors and presence, offline support, and sub-document editing. Automerge rejected for weaker rich-text support; ShareDB rejected due to OT complexity and limited offline capability. |
 | CRDT Sync Server   | y-websocket                    | Reference Yjs synchronisation implementation; lightweight and well-tested. Known limitation: single-instance, no horizontal scaling.                                                                                                        |
 | Build Tool         | Vite 5                         | Fast HMR for React development; simpler configuration than Webpack.                                                                                                                                                                         |
-| Client State       | Zustand 4                      | Lightweight global state management for auth, editor metadata, and AI state. Redux rejected as overly complex for four stores.                                                                                                              |
-| Server State       | React Query (TanStack) 5       | Handles caching, refetching, and optimistic updates for REST calls; standard for React and REST architectures.                                                                                                                              |
-| Backend Framework  | FastAPI 0.110+                 | Async Python; auto-generated OpenAPI documentation; Pydantic validation; native SSE support; team proficiency in Python.                                                                                                                    |
-| ORM                | SQLAlchemy 2                   | Mature async ORM with strong FastAPI integration.                                                                                                                                                                                           |
-| Validation         | Pydantic v2                    | Native FastAPI validation; generates TypeScript types via datamodel-code-generator for shared contract enforcement.                                                                                                                         |
-| Database           | PostgreSQL 16                  | ACID-compliant; Render-managed; stores users, document metadata, versions, permissions, and AI interaction logs.                                                                                                                            |
-| LLM API            | Groq — llama-3.3-70b-versatile | Ultra-low latency via LPU hardware; cost-effective; fast time-to-first-token for streaming UX; input data not used for model training.                                                                                                      |
-| Authentication     | JWT (python-jose + bcrypt)     | Stateless authentication; 15-minute access tokens; 7-day refresh tokens; standard pattern for SPAs.                                                                                                                                         |
+| Client State       | Hook-local React state + Zustand 5 | The current code centralizes realtime collaboration metadata in `editorStore`, while auth, document, and AI state remain hook-local.                                                                                                     |
+| Server State       | React Query (TanStack) 5       | Currently used for realtime session bootstrap and suitable for further REST caching as the frontend matures.                                                                                                                                |
+| Backend Framework  | FastAPI 0.116.1                | Async Python backend with native request validation and SSE support.                                                                                                                                                                        |
+| Database Driver    | asyncpg                        | Direct async PostgreSQL access is what the current backend actually uses.                                                                                                                                                                   |
+| Validation         | Pydantic v2                    | Defines the live request and response contracts in `backend/api/schemas.py`.                                                                                                                                                                |
+| Database           | PostgreSQL 16                  | Render-managed persistence for users, documents, document content projections, Yjs snapshots, permissions, and AI logs.                                                                                                                     |
+| LLM API            | Groq — llama-3.3-70b-versatile | Low time-to-first-token and straightforward backend proxy integration.                                                                                                                                                                      |
+| Authentication     | JWT (PyJWT + bcrypt)           | This is the library stack used by the current implementation in `backend/api/auth.py`.                                                                                                                                                      |
 | Deployment         | Render                         | Managed hosting with built-in TLS, managed PostgreSQL, and multi-service Blueprint deployment.                                                                                                                                              |
 | Repository         | Monorepo (single Git repo)     | Enables atomic cross-boundary commits, a single CI pipeline, and shared type definitions across a four-person team.                                                                                                                         |
-
-{15}------------------------------------------------
 
 #### 2.2.2 AI Integration Design
 
 | Decision Area                | Decision                                                                                                                                                                                                                                                                                 | Rationale                                                                                                                                                     |
 |------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Context transmitted to Groq  | User selection plus up to 500 tokens of surrounding context and the document title. Full document is never transmitted by default.                                                                                                                                                       | Balances cost control and privacy; smaller prompts produce faster inference; title and section headers provide sufficient global context for most operations. |
-| Full-document summarisation  | User must explicitly opt in; the system chunks the document into segments fitting an 8,192-token context window, processes them sequentially, and combines the results.                                                                                                                  | Prevents accidental cost spikes; chunking accommodates long documents without exceeding context limits.                                                       |
-| Suggestion UX                | Tracked-change style inline rendering: original text shown with strikethrough in red; AI insertion shown in green. Implemented as a custom Tiptap extension using decoration nodes.                                                                                                      | Mirrors the familiar Track Changes paradigm; inline presentation eliminates context switching to a sidebar.                                                   |
-| AI during concurrent editing | Target paragraph is soft-locked during AI processing; other collaborators see an <i>AI is processing</i> indicator and their edits to that region are queued; lock releases on suggestion display or after a 5-second timeout on failure.                                                | Prevents semantically incoherent CRDT merges; lock duration is brief (1–3 s with Groq); edits to other regions remain unaffected.                             |
-| Prompt storage               | Python f-string templates stored in <code>backend/ai/prompts.py</code> ; one template per feature; parameters include <code>selected_text</code> , <code>surrounding_context</code> , <code>document_title</code> , <code>target_language</code> , and <code>style_instructions</code> . | Prompt updates require no changes to business logic; supports hot-reload in development; can be externalised to a configuration file in future.               |
-| Model selection              | <code>llama-3.3-70b-versatile</code> via Groq for all features; <code>llama-3.1-8b</code> available as a fallback for budget-constrained operations.                                                                                                                                     | Strong output quality at low cost; Groq LPU hardware delivers fast first-token latency.                                                                       |
-| Cost control                 | Three-tier enforcement: (1) per-user daily quota of 50,000 tokens tracked in the database; (2) organisation-level monthly budget configurable by admins; (3) per-request input cap of 4,000 tokens with automatic truncation.                                                            | Layered defence against cost overrun; quota exhaustion returns HTTP 429 with a clear message.                                                                 |
-| Backend proxy                | All AI requests are routed frontend → backend → Groq; direct frontend-to-Groq calls are not permitted.                                                                                                                                                                                   | Conceals the API key; guarantees server-side logging and quota enforcement; the additional network hop ( 10–50 ms) is acceptable.                             |
-
-{16}------------------------------------------------
+| Context transmitted to Groq  | Rewrite, summarize, translate, and restructure requests are selection-scoped; continue-writing uses a recent trailing excerpt of the document. Full-document context is not sent by default.                                                                                              | Keeps prompts cheaper, faster, and less privacy-invasive while still giving the model enough local context to respond well.                                  |
+| Suggestion UX                | The current PoC is preview-first. The sidebar streams the generated suggestion, and the user explicitly applies or rejects it. In rich mode the editor also renders a temporary inline preview surface during review.                                                                      | Matches the code that is currently shipped, even though a deeper Yjs-native tracked-change model remains a future refinement.                                |
+| AI during concurrent editing | Collaboration remains live during AI requests. The initiating client reviews the generated preview and then applies it through the normal document update path. The stricter soft-lock policy remains documented, but it is not yet enforced end to end in the current code.             | Honest representation of the implemented behavior. The current PoC proves AI plus sync can coexist without yet claiming paragraph-level region locks.        |
+| Prompt storage               | Prompt templates live in `backend/ai/prompts.py`, with per-feature helpers for rewrite, summarize, translate, restructure, and continue-writing.                                                                                                                                          | Prompt updates remain isolated from route and UI code.                                                                                                       |
+| Model selection              | `llama-3.3-70b-versatile` is the default model, with a fallback model configurable by environment variable.                                                                                                                                                                                | Good latency-quality trade-off and easy operator override.                                                                                                   |
+| Cost control                 | The running backend enforces a per-user daily quota, an org-level monthly budget through `org_ai_settings`, and request-size checks before dispatch.                                                                                                                                      | Controls runaway usage during development and in the Render preview environment.                                                                             |
+| Backend proxy                | All AI requests still flow frontend → FastAPI → Groq, including SSE token streaming.                                                                                                                                                                                                      | Keeps the API key private and centralizes logging, quota, and error normalization.                                                                           |
 
 #### 2.2.3 API Design
 
@@ -769,10 +371,13 @@ The system will be decomposed into six modules, each with a clearly defined resp
 | POST   | /api/ai/summarize             | {doc_id, selection, context?}                | SSE stream                               |
 | POST   | /api/ai/translate             | {doc_id, selection, (context), target_lang}  | SSE stream                               |
 | POST   | /api/ai/restructure           | {doc_id, selection, (context), instructions} | SSE stream                               |
+| POST   | /api/ai/continue              | {doc_id, selection, notes?}                  | SSE stream                               |
 | POST   | /api/ai/cancel/:suggestion_id | —                                            | 200                                      |
 | POST   | /api/ai/feedback              | {suggestion_id, action}                      | 200                                      |
 | GET    | /api/ai/history               | ?doc_id=&limit=&feature=&status=             | [{id, feature, status, tokens_used}]     |
 | DELETE | /api/ai/history/:id           | —                                            | 204                                      |
+
+`POST /api/ai/rewrite` uses the strict SSE request shape above. The current frontend streams that endpoint through `streamAIAction`.
 
 ##### Error Codes
 
@@ -794,6 +399,8 @@ The system will be decomposed into six modules, each with a clearly defined resp
 | POST   | /api/auth/login    | {email, password}       | {access_token, refresh_token}                 |
 | POST   | /api/auth/refresh  | {refresh_token}         | {access_token, refresh_token}                 |
 | GET    | /api/users/me      | —                       | {id, email, name, created_at}                 |
+
+The current implementation uses stateless JWT authentication with short-lived access tokens and refresh tokens. Document roles are enforced server-side on document CRUD, permissions, AI history, and streaming AI endpoints. The current admin model is a singleton capability used for `/api/admin/ai-settings`, rather than a full organization membership subsystem.
 
 ##### Admin
 
@@ -820,9 +427,10 @@ The system will be decomposed into six modules, each with a clearly defined resp
 | Document CRUD        | REST (HTTPS)                    | SPA → API           | Simple, cacheable, and stateless; appropriate for request-response document operations.               |
 | Authentication       | REST + JWT                      | SPA → API           | Standard stateless authentication pattern for single-page applications.                               |
 | AI invocation        | REST + SSE streaming            | SPA → API → Groq    | SSE enables word-by-word delivery of AI responses, providing immediate user feedback without polling. |
-| Real-time edits      | WebSocket (Yjs binary protocol) | SPA ↔ Collab Server | Low-latency bidirectional channel; native to Yjs synchronisation protocol.                            |
-| Presence (cursors)   | WebSocket (Yjs Awareness)       | SPA ↔ Collab Server | Provided natively by Yjs at no additional implementation cost.                                        |
-| Snapshot persistence | SQL (internal)                  | Collab Server → DB  | Debounced writes every 30 seconds when document state has changed.                                    |
+| Real-time edits      | WebSocket (Yjs binary protocol) | SPA ↔ Collab Server | Low-latency bidirectional channel used only by the rich-editor collaboration path.                    |
+| Presence (cursors)   | WebSocket (Yjs Awareness)       | SPA ↔ Collab Server | Native Yjs awareness is already used to surface peer count and live editor state.                     |
+| Document saves       | REST (HTTPS)                    | SPA → API           | The rich editor reloads and AI apply flow persist through the strict REST document-content projection. |
+| Snapshot persistence | SQL (internal)                  | Collab Server → DB  | Yjs snapshots are restored and persisted by the collab server independently of the plain text path.   |
 
 ### 2.3 Code Structure & Repository Organization
 
@@ -830,92 +438,156 @@ The system will be decomposed into six modules, each with a clearly defined resp
 
 collab-editor/
   frontend/
-    src/components/          (Tanisha)
-    src/hooks/               React UI components
-    src/stores/              useDocument, useAI, useAuth, usePresence
-    src/api/                 Zustand: authStore, editorStore, aiStore
-    src/extensions/          React Query hooks wrapping REST endpoints
-    vite.config.ts           Custom Tiptap extensions (AI suggestion, soft lock)
-  backend/api/               (Atharv)
-    routes/                  documents.py, auth.py, ai.py, permissions.py
-    middleware/              Auth, CORS, rate limiting
-    services/                Business logic layer
-    models/                  SQLAlchemy ORM models
-    schemas/                 Pydantic request/response schemas
-    main.py
-  backend/ai/                (Temiko)
-    prompts.py               Prompt templates per feature
-    groq_client.py           Groq API wrapper and streaming handler
-    router.py                /ai/* route definitions
-    quota.py                 Per-user token quota enforcement
-  backend/collab/            (Teya)
-    server.js                y-websocket server entry point
-    persistence.js           PostgreSQL snapshot adapter
-  shared/types/              Pydantic-generated TypeScript types
-  shared/constants/          Roles, AI features, error codes
-  infra/                     (Teya)
-    render.yaml              Render Blueprint configuration
-    .env.example             Environment variable template
-    init.sql                 Database initialisation script
-  tests/unit/                Per-module unit tests
-  tests/integration/         API integration tests
-  tests/e2e/                 Playwright end-to-end tests
-  .github/workflows/         CI/CD pipeline definitions
+    src/
+      api/                   authAPI, documentAPI, mockAPI, realtimeAPI
+      components/            App shell, editors, AI sidebar, auth and error UI
+      extensions/            realtimeEditor.ts
+      hooks/                 useAuth, useDocument, useAI, useRealtimeSession, useVersionConflict
+      stores/                editorStore.ts
+      styles/                shared CSS entrypoints
+      types/                 frontend request and domain types
+      App.tsx
+      main.tsx
+  backend/
+    api/
+      auth.py                JWT and password helpers
+      config.py              environment-backed settings
+      main.py                FastAPI app and route surface
+      runtime.py             user, document metadata, permission, quota, and admin policy logic
+      schemas.py             Pydantic request and response models
+      store.py               strict document content projection and export path
+    ai/
+      groq_client.py         Groq API wrapper and streaming handler
+      prompts.py             feature-specific prompt templates
+      quota.py               token estimation and quota helpers
+      service.py             AI orchestration
+    collab/
+      server.js              y-websocket server entry point
+      persistence.js         PostgreSQL snapshot adapter
+    tests/
+      test_api.py            backend integration-style tests
+    requirements.txt
+  docs/
+    brief.md
+    contract.md
+    master_contract/
+      report.md
+      diagrams/
+    submission/
+  infra/
+    init.sql
+    render.yaml
+    .env.example
 
 ```
 
-{18}------------------------------------------------
+The repository is a monorepo, but it is not yet split into a generated `shared/` contract package. Frontend TypeScript types and backend Pydantic schemas are still maintained in parallel. Configuration lives in `.env.example`, `frontend/.env.example`, and Render environment variables. Tests currently live under `backend/tests`, while frontend verification is handled through linting, builds, and live browser smoke tests rather than a separate committed `tests/e2e` suite.
 
 ### 2.4 Data Model
 
-Entity-relationship diagram
+```mermaid
+erDiagram
+    USERS ||--o{ DOCUMENTS : owns
+    USERS ||--o{ DOCUMENT_VERSIONS : creates
+    USERS ||--o{ DOCUMENT_TEXT_VERSIONS : creates
+    USERS ||--o{ PERMISSIONS : receives
+    USERS ||--o{ AI_INTERACTIONS : invokes
+    USERS ||--o| ORG_AI_SETTINGS : updates
+    DOCUMENTS ||--|| DOCUMENT_LIVE_CONTENT : has
+    DOCUMENTS ||--o{ DOCUMENT_TEXT_VERSIONS : records
+    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : stores
+    DOCUMENTS ||--o{ PERMISSIONS : shares
+    DOCUMENTS ||--o{ AI_INTERACTIONS : tracks
 
-![Entity-relationship diagram showing five tables: users, documents, document_versions, permissions, and ai_interactions with their attributes and relationships.](2b3a967f6ce4f23649be995a353e39f8_img.jpg)
+    USERS {
+        uuid id PK
+        string email UK
+        string hashed_password
+        string name
+        datetime created_at
+        int daily_ai_tokens_used
+        datetime ai_tokens_reset_at
+    }
 
-The diagram illustrates the following entities and relationships:
+    DOCUMENTS {
+        uuid id PK
+        string title
+        uuid owner_id FK
+        boolean is_deleted
+        datetime deleted_at
+        datetime created_at
+        datetime updated_at
+    }
 
-- users** (purple table):
-  - Attributes: id (PK, UUID), email (UK, string), hashed\_password (string), name (string), created\_at (timestamp), daily\_ai\_tokens\_used (int), ai\_tokens\_reset\_at (timestamp).
-  - Relationships:
-    - creates**: One-to-many relationship with **document\_versions**.
-    - owns**: One-to-many relationship with **documents**.
-    - invokes**: One-to-many relationship with **ai\_interactions**.
-    - holds**: Many-to-one relationship with **documents**.
-    - has**: Many-to-one relationship with **permissions**.
-- documents** (teal table):
-  - Attributes: id (PK, UUID), title (string), owner\_id (FK, UUID), created\_at (timestamp), updated\_at (timestamp), is\_deleted (boolean).
-  - Relationships:
-    - owns**: One-to-many relationship with **users**.
-    - has**: One-to-many relationship with **document\_versions**.
-    - has**: One-to-many relationship with **permissions**.
-    - subject of**: One-to-many relationship with **ai\_interactions**.
-- document\_versions** (orange table):
-  - Attributes: id (PK, UUID), doc\_id (FK, UUID), snapshot (bytea), created\_at (timestamp), created\_by (FK, UUID).
-  - Relationships:
-    - creates**: Many-to-one relationship with **users**.
-    - has**: Many-to-one relationship with **documents**.
-- permissions** (blue table):
-  - Attributes: id (PK, UUID), doc\_id (FK, UUID), user\_id (FK, UUID), role (enum), created\_at (timestamp).
-  - Relationships:
-    - has**: Many-to-one relationship with **users**.
-    - has**: Many-to-one relationship with **documents**.
-- ai\_interactions** (green table):
-  - Attributes: id (PK, UUID), doc\_id (FK, UUID), user\_id (FK, UUID), feature (enum), input\_text (text), suggestion\_text (text), status (enum), tokens\_used (int), created\_at (timestamp).
-  - Relationships:
-    - invokes**: Many-to-one relationship with **users**.
-    - subject of**: Many-to-one relationship with **documents**.
+    DOCUMENT_LIVE_CONTENT {
+        uuid doc_id PK, FK
+        text content
+        int version_id
+        datetime updated_at
+    }
 
-Entity-relationship diagram showing five tables: users, documents, document\_versions, permissions, and ai\_interactions with their attributes and relationships.
+    DOCUMENT_TEXT_VERSIONS {
+        uuid id PK
+        uuid doc_id FK
+        int version_number
+        text content
+        uuid created_by FK
+        datetime created_at
+    }
 
-{19}------------------------------------------------
+    DOCUMENT_VERSIONS {
+        uuid id PK
+        uuid doc_id FK
+        blob snapshot
+        uuid created_by FK
+        datetime created_at
+    }
 
-| Table                          | Key Columns                                                                                                                                                                                                                                                                                                                                     | Design Notes                                                                                                                                                                                                                                                                                                                                                                                         |
-|--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <code>users</code>             | <code>id</code> (UUID PK), <code>email</code> (unique), <code>hashed_password</code> , <code>name</code> , <code>created_at</code> , <code>daily_ai_tokens_used</code> , <code>ai_tokens_reset_at</code>                                                                                                                                        | Manages authentication credentials and per-user AI resource consumption. The daily token counter resets automatically when the current timestamp exceeds <code>ai_tokens_reset_at</code> , allowing a lightweight quota cycle without scheduled jobs.                                                                                                                                                |
-| <code>documents</code>         | <code>id</code> (UUID PK), <code>title</code> , <code>owner_id</code> (FK → <code>users</code> ), <code>created_at</code> , <code>updated_at</code> , <code>is_deleted</code>                                                                                                                                                                   | Stores document metadata only. Document content is intentionally decoupled from this table; the canonical content is the Yjs binary state persisted in <code>document_versions</code> . <code>is_deleted</code> supports soft deletion with a 30-day recovery window. <code>owner_id</code> is also stored here for fast ownership lookups, in addition to the entry in <code>permissions</code> .   |
-| <code>document_versions</code> | <code>id</code> (UUID PK), <code>doc_id</code> (FK → <code>documents</code> ), <code>snapshot</code> (bytea), <code>created_at</code> , <code>created_by</code> (FK → <code>users</code> )                                                                                                                                                      | Append-only version history storing the full Yjs CRDT state as a binary blob rather than a diff. Revert operations load the target snapshot, apply it as a new Yjs update, and insert a new row — existing history is never overwritten. The y-websocket server writes a new snapshot every 30 seconds when the document has changed.                                                                |
-| <code>permissions</code>       | <code>id</code> (UUID PK), <code>doc_id</code> (FK → <code>documents</code> ), <code>user_id</code> (FK → <code>users</code> ), <code>role</code> (enum: owner / editor / commenter / viewer), <code>created_at</code>                                                                                                                          | Enforces per-document, per-user access control. A unique constraint on ( <code>doc_id</code> , <code>user_id</code> ) ensures a user holds exactly one role per document. The owner role is also reflected in <code>documents.owner_id</code> for fast lookup without a join.                                                                                                                        |
-| <code>ai_interactions</code>   | <code>id</code> (UUID PK), <code>doc_id</code> (FK → <code>documents</code> ), <code>user_id</code> (FK → <code>users</code> ), <code>feature</code> (enum), <code>input_text</code> , <code>suggestion_text</code> , <code>status</code> (enum: accepted / rejected / partial / cancelled), <code>tokens_used</code> , <code>created_at</code> | Audit trail linking every AI invocation to a specific document and user. <code>tokens_used</code> supports cost attribution and per-user quota enforcement. Records are subject to automated 90-day purge and are user-deletable on demand to satisfy data minimisation requirements. Cancelled operations produce a log entry with <code>status = cancelled</code> but no accepted suggestion text. |
+    PERMISSIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid user_id FK
+        string role
+        datetime created_at
+    }
+
+    AI_INTERACTIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid user_id FK
+        string feature
+        text input_text
+        text suggestion_text
+        string status
+        int tokens_used
+        datetime created_at
+    }
+
+    ORG_AI_SETTINGS {
+        boolean singleton PK
+        json feature_access
+        int daily_token_limit
+        bigint monthly_token_budget
+        boolean consent_required
+        uuid updated_by FK
+        datetime updated_at
+    }
+```
+
+![Entity-Relationship Diagram](diagrams/erd.png)
+
+The current schema keeps both reloadable document text and rich-editor snapshot history. `documents` stores metadata and ownership, while `permissions` enforces per-document roles. The REST document-content projection uses `document_live_content` and `document_text_versions`. The rich-editor collaboration path writes Yjs binary snapshots to `document_versions`. AI usage and feedback live in `ai_interactions`, and singleton admin controls live in `org_ai_settings`.
+
+| Table                          | Key Columns | Design Notes |
+|--------------------------------|-------------|--------------|
+| <code>users</code>             | <code>id</code>, <code>email</code>, <code>hashed_password</code>, <code>name</code>, <code>daily_ai_tokens_used</code>, <code>ai_tokens_reset_at</code> | Authentication credentials plus rolling per-user AI quota state. |
+| <code>documents</code>         | <code>id</code>, <code>title</code>, <code>owner_id</code>, <code>is_deleted</code>, <code>deleted_at</code>, <code>created_at</code>, <code>updated_at</code> | Document metadata and soft-delete state. |
+| <code>document_live_content</code> | <code>doc_id</code>, <code>content</code>, <code>version_id</code>, <code>updated_at</code> | Current reloadable document text exposed through the strict REST document endpoints. |
+| <code>document_text_versions</code> | <code>id</code>, <code>doc_id</code>, <code>version_number</code>, <code>content</code>, <code>created_by</code>, <code>created_at</code> | Append-only text versions for export, reload, revert, and AI-apply history. |
+| <code>document_versions</code> | <code>id</code>, <code>doc_id</code>, <code>snapshot</code>, <code>created_by</code>, <code>created_at</code> | Yjs snapshot history persisted by the collaboration server. |
+| <code>permissions</code>       | <code>id</code>, <code>doc_id</code>, <code>user_id</code>, <code>role</code>, <code>created_at</code> | Per-document RBAC entries. |
+| <code>ai_interactions</code>   | <code>id</code>, <code>doc_id</code>, <code>user_id</code>, <code>feature</code>, <code>input_text</code>, <code>suggestion_text</code>, <code>status</code>, <code>tokens_used</code>, <code>created_at</code> | Audit trail for streamed or completed AI operations plus feedback state. |
+| <code>org_ai_settings</code>   | <code>singleton</code>, <code>feature_access</code>, <code>daily_token_limit</code>, <code>monthly_token_budget</code>, <code>consent_required</code>, <code>updated_by</code>, <code>updated_at</code> | Singleton admin policy row used by `/api/admin/ai-settings`. |
 
 ### 2.5 Architecture Decision Records (ADRs)
 
@@ -969,7 +641,7 @@ Entity-relationship diagram showing five tables: users, documents, document\_ver
 
 **Context:** Four team members are working concurrently on frontend, backend, AI integration, and infrastructure. Coordination overhead must be minimised without sacrificing code organisation.
 
-**Decision:** A single Git repository is used with clearly defined directory ownership: `frontend/` (Tanisha), `backend/api/` (Atharv), `backend/ai/` (Temiko), `backend/collab/` and `infra/` (Teya). Shared types reside in `shared/`.
+**Decision:** A single Git repository is used with clearly defined directory ownership: `frontend/` (Tanisha), `backend/api/` (Atharv), `backend/ai/` (Temiko), and `backend/collab/` plus `infra/` (Teya). Shared contracts are currently maintained through parallel Pydantic and TypeScript types rather than a dedicated generated `shared/` package.
 
 **Positive Consequences:** Atomic cross-boundary commits; single CI pipeline; shared type generation in one place.
 
@@ -1036,8 +708,16 @@ The backlog for the Implementation sprint will be managed in GitHub Projects usi
 
 ## 4 Proof of Concept
 
-[GitHub Repository link](#)
+[GitHub Repository](https://github.com/Tititooo/swe-1-doc-edit-AI)
 
-The report has defined the structural and functional requirements necessary to build a reliable collaborative editor. By mapping user stories directly to a layered C4 architecture, we have ensured the system is designed to handle real-time synchronization without unnecessary complexity.
+The current proof-of-concept goes beyond the minimum assignment requirement of “one meaningful API call.” The repository now demonstrates:
 
-The accompanying repository contains the functional proof-of-concept, validating our architectural decisions through a "clone-and-run" setup. The core integration between the frontend, backend, and database can be verified by following the README instructions in the repository or by viewing the demo video. Thank you for your time in reviewing the project!
+- frontend authentication, registration, and token refresh against the FastAPI backend
+- document loading and update through the strict document API
+- rich-editor live sync in two browser sessions through `POST /api/realtime/session` and the `y-websocket` collaboration server
+- AI rewrite requests streamed from Groq through the backend proxy, plus AI history persistence and feedback
+- deployed health endpoints for the backend and collaboration services on Render
+
+This PoC does not yet claim full feature parity with every aspirational design decision in Part 2. In particular, the AI suggestion UX is still preview-first rather than a final Yjs-native tracked-change model. That gap is visible in the repository structure and was intentionally documented in the architecture section above instead of being hidden.
+
+The repository can be run locally from the provided README, and the editable Mermaid sources for all required diagrams live under `docs/master_contract/diagrams/`. A separate demo recording can accompany the submission package; it is not stored in the repository itself.

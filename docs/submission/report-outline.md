@@ -71,3 +71,4 @@ This directory packages the missing report-ready artifacts for Assignment 1. It 
 - Keep the identifiers from `docs/contract.md` unchanged in the final PDF so that FR, NFR, US, and ADR references remain consistent.
 - Render each Mermaid source into PNG or PDF for embedding, but also submit the `.mmd` sources unchanged alongside the final report.
 - The ERD intentionally adds organization policy entities so that FR-UM-04 has an explicit storage model; this closes a gap in the draft contract without changing the rest of the architecture.
+- Use `docs/master_contract/diagrams/render.sh` to regenerate the PNG exports before assembling the final PDF.

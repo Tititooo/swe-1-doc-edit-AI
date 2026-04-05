@@ -55,6 +55,7 @@ export const AuthPanel = ({ loading, error, onLogin, onRegister }: AuthPanelProp
             type="button"
             className={mode === 'login' ? 'auth-switch active' : 'auth-switch'}
             onClick={() => setMode('login')}
+            data-testid="auth-mode-login"
           >
             Sign In
           </button>
@@ -62,6 +63,7 @@ export const AuthPanel = ({ loading, error, onLogin, onRegister }: AuthPanelProp
             type="button"
             className={mode === 'register' ? 'auth-switch active' : 'auth-switch'}
             onClick={() => setMode('register')}
+            data-testid="auth-mode-register"
           >
             Register
           </button>
@@ -76,6 +78,7 @@ export const AuthPanel = ({ loading, error, onLogin, onRegister }: AuthPanelProp
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Preview user"
                 autoComplete="name"
+                data-testid="auth-name"
               />
             </label>
           )}
@@ -89,6 +92,7 @@ export const AuthPanel = ({ loading, error, onLogin, onRegister }: AuthPanelProp
               autoComplete="email"
               type="email"
               required
+              data-testid="auth-email"
             />
           </label>
 
@@ -102,12 +106,13 @@ export const AuthPanel = ({ loading, error, onLogin, onRegister }: AuthPanelProp
               type="password"
               minLength={8}
               required
+              data-testid="auth-password"
             />
           </label>
 
           {error && <div className="auth-error">{error.message}</div>}
 
-          <button className="auth-submit" type="submit" disabled={loading}>
+          <button className="auth-submit" type="submit" disabled={loading} data-testid="auth-submit">
             {submitLabel}
           </button>
         </form>

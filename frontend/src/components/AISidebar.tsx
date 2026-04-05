@@ -78,6 +78,7 @@ export const AISidebar = ({
           value={feature}
           onChange={(e) => setFeature(e.target.value as AIFeature)}
           disabled={isLoading}
+          data-testid="ai-action-select"
         >
           <option value="rewrite">Rewrite</option>
           <option value="summarize">Summarize</option>
@@ -126,6 +127,7 @@ export const AISidebar = ({
           onChange={(e) => setNotes(e.target.value)}
           disabled={isLoading}
           placeholder="Optional guidance for the AI"
+          data-testid="ai-notes"
         />
       </div>
 
@@ -168,6 +170,7 @@ export const AISidebar = ({
             })
           }
           disabled={isLoading || !canRun}
+          data-testid="ai-run"
         >
           {isLoading ? (
             <>
@@ -185,6 +188,7 @@ export const AISidebar = ({
           <button
             className="btn btn-apply"
             onClick={() => void onCancel()}
+            data-testid="ai-cancel"
           >
             Cancel
           </button>
@@ -195,6 +199,7 @@ export const AISidebar = ({
             className="btn btn-apply"
             onClick={() => onApply(aiResponse)}
             disabled={isApplyDisabled || isLoading}
+            data-testid="ai-apply"
           >
             Apply
           </button>
@@ -204,6 +209,7 @@ export const AISidebar = ({
           <button
             className="btn"
             onClick={() => void onReject()}
+            data-testid="ai-dismiss"
           >
             Dismiss
           </button>

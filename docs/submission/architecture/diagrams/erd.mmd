@@ -1,14 +1,13 @@
-%% The draft contract listed five core tables. This ERD adds organization policy tables so FR-UM-04 has explicit persistent state.
 erDiagram
-    ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERSHIPS : has
-    USERS ||--o{ ORGANIZATION_MEMBERSHIPS : joins
-    ORGANIZATIONS ||--|| ORGANIZATION_AI_POLICIES : governs
-    ORGANIZATIONS ||--o{ DOCUMENTS : scopes
     USERS ||--o{ DOCUMENTS : owns
     USERS ||--o{ DOCUMENT_VERSIONS : creates
+    USERS ||--o{ DOCUMENT_TEXT_VERSIONS : creates
     USERS ||--o{ PERMISSIONS : receives
     USERS ||--o{ AI_INTERACTIONS : invokes
-    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : records
+    USERS ||--o| ORG_AI_SETTINGS : updates
+    DOCUMENTS ||--|| DOCUMENT_LIVE_CONTENT : has
+    DOCUMENTS ||--o{ DOCUMENT_TEXT_VERSIONS : records
+    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : stores
     DOCUMENTS ||--o{ PERMISSIONS : shares
     DOCUMENTS ||--o{ AI_INTERACTIONS : tracks
 
@@ -17,52 +16,42 @@ erDiagram
         string email UK
         string hashed_password
         string name
+        datetime created_at
         int daily_ai_tokens_used
         datetime ai_tokens_reset_at
-        datetime created_at
-    }
-
-    ORGANIZATIONS {
-        uuid id PK
-        string name
-        datetime created_at
-    }
-
-    ORGANIZATION_MEMBERSHIPS {
-        uuid id PK
-        uuid organization_id FK
-        uuid user_id FK
-        string org_role
-        datetime created_at
-    }
-
-    ORGANIZATION_AI_POLICIES {
-        uuid id PK
-        uuid organization_id FK
-        boolean rewrite_enabled_for_editors
-        boolean summarize_enabled_for_editors
-        boolean translate_enabled_for_editors
-        boolean restructure_enabled_for_editors
-        int monthly_token_budget
-        datetime updated_at
     }
 
     DOCUMENTS {
         uuid id PK
-        uuid organization_id FK
-        uuid owner_id FK
         string title
+        uuid owner_id FK
         boolean is_deleted
+        datetime deleted_at
         datetime created_at
         datetime updated_at
+    }
+
+    DOCUMENT_LIVE_CONTENT {
+        uuid doc_id PK, FK
+        text content
+        int version_id
+        datetime updated_at
+    }
+
+    DOCUMENT_TEXT_VERSIONS {
+        uuid id PK
+        uuid doc_id FK
+        int version_number
+        text content
+        uuid created_by FK
+        datetime created_at
     }
 
     DOCUMENT_VERSIONS {
         uuid id PK
         uuid doc_id FK
-        uuid created_by FK
         blob snapshot
-        string version_reason
+        uuid created_by FK
         datetime created_at
     }
 
@@ -79,10 +68,19 @@ erDiagram
         uuid doc_id FK
         uuid user_id FK
         string feature
-        string source_range
         text input_text
         text suggestion_text
         string status
         int tokens_used
         datetime created_at
+    }
+
+    ORG_AI_SETTINGS {
+        boolean singleton PK
+        json feature_access
+        int daily_token_limit
+        bigint monthly_token_budget
+        boolean consent_required
+        uuid updated_by FK
+        datetime updated_at
     }

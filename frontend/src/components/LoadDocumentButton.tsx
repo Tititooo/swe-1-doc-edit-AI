@@ -27,6 +27,7 @@ export const LoadDocumentButton = ({
       onClick={onLoad}
       disabled={isLoading}
       title={hasDocument ? 'Reload the latest document' : 'Click to load document'}
+      data-testid="load-document"
     >
       {isLoading && (
         <span className="spinner">🔄</span>

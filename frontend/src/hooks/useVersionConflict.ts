@@ -11,7 +11,7 @@ import { checkDocumentVersion } from '../api/documentAPI'
 interface UseVersionConflictReturn {
   hasConflict: boolean
   conflictMessage: string | null
-  checkConflict: (localVersionId: number | null) => Promise<boolean>
+  checkConflict: (docId: string | null, localVersionId: number | null) => Promise<boolean>
   clearConflict: () => void
 }
 
@@ -20,14 +20,14 @@ export const useVersionConflict = (): UseVersionConflictReturn => {
   const [conflictMessage, setConflictMessage] = useState<string | null>(null)
 
   const checkConflict = useCallback(
-    async (localVersionId: number | null): Promise<boolean> => {
-      if (localVersionId === null) {
+    async (docId: string | null, localVersionId: number | null): Promise<boolean> => {
+      if (docId === null || localVersionId === null) {
         setConflict(false, null)
         return false
       }
 
       try {
-        const { versionId: serverVersionId } = await checkDocumentVersion()
+        const { versionId: serverVersionId } = await checkDocumentVersion(docId)
 
         if (serverVersionId !== localVersionId) {
           setConflict(true, 'Document has changed.')

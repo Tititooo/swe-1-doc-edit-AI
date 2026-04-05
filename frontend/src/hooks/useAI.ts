@@ -28,7 +28,6 @@ interface UseAIReturn {
   requestRewrite: (
     documentId: string | null,
     selectedText: string,
-    versionId: number | null,
     options: AIRequestOptions
   ) => Promise<void>
   clearError: () => void
@@ -96,10 +95,9 @@ export const useAI = (): UseAIReturn => {
     async (
       documentId: string | null,
       selectedText: string,
-      versionId: number | null,
       options: AIRequestOptions
     ) => {
-      if (versionId === null || documentId === null) {
+      if (documentId === null) {
         setAIError({
           message: 'Document not loaded',
         })

@@ -18,6 +18,7 @@ interface ExperimentalTiptapEditorProps {
   onChange: (content: string) => void
   onSelect: (selection: TextSelection | null) => void
   onAccept: (newText: string) => void
+  onClearPreview: () => void
   onReject: () => void
   disabled?: boolean
 }
@@ -26,6 +27,11 @@ interface RealtimeEditorContext {
   document: Y.Doc
   provider: WebsocketProvider
   key: string
+}
+
+interface EditorSelectionRange {
+  from: number
+  to: number
 }
 
 const escapeHtml = (value: string) =>
@@ -92,10 +98,10 @@ export const ExperimentalTiptapEditor = ({
   onChange,
   onSelect,
   onAccept,
+  onClearPreview,
   onReject,
   disabled = false,
 }: ExperimentalTiptapEditorProps) => {
-  const hasPreview = !!aiResponse
   const collaborationStatus = useEditorStore((state) => state.collaborationStatus)
   const presenceCount = useEditorStore((state) => state.presenceCount)
   const setCollaborationStatus = useEditorStore((state) => state.setCollaborationStatus)
@@ -103,7 +109,10 @@ export const ExperimentalTiptapEditor = ({
   const setConnectionError = useEditorStore((state) => state.setConnectionError)
   const sessionQuery = useRealtimeSession(documentId, !!documentId)
   const seededDocsRef = useRef<Set<string>>(new Set())
+  const selectionRangeRef = useRef<EditorSelectionRange | null>(null)
   const [realtimeContext, setRealtimeContext] = useState<RealtimeEditorContext | null>(null)
+  const [hidePreview, setHidePreview] = useState(false)
+  const hasPreview = !!aiResponse && !hidePreview
 
   useEffect(() => {
     if (!documentId || !sessionQuery.data) {
@@ -188,10 +197,12 @@ export const ExperimentalTiptapEditor = ({
       onSelectionUpdate: ({ editor: currentEditor }) => {
         const { from, to } = currentEditor.state.selection
         if (from === to) {
+          selectionRangeRef.current = null
           onSelect(null)
           return
         }
 
+        selectionRangeRef.current = { from, to }
         const before = currentEditor.state.doc.textBetween(0, from, '\n\n', '\n')
         const selected = currentEditor.state.doc.textBetween(from, to, '\n\n', '\n')
         onSelect({
@@ -250,27 +261,65 @@ export const ExperimentalTiptapEditor = ({
     [content, selection, aiResponse, isStreaming]
   )
 
+  useEffect(() => {
+    setHidePreview(false)
+  }, [aiResponse])
+
+  const applyPreviewToEditor = async () => {
+    if (!editor || !aiResponse) {
+      return
+    }
+
+    setHidePreview(true)
+
+    const previewMarkup = textToHtml(aiResponse)
+    const selectionRange = selectionRangeRef.current
+
+    try {
+      if (selectionRange) {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(selectionRange)
+          .insertContent(previewMarkup)
+          .run()
+        selectionRangeRef.current = null
+      } else {
+        editor.chain().focus('end').insertContent(previewMarkup).run()
+      }
+
+      onSelect(null)
+      await Promise.resolve(onAccept(editor.getText({ blockSeparator: '\n\n' })))
+      onClearPreview()
+    } catch (error) {
+      setHidePreview(false)
+      throw error
+    }
+  }
+
   if (hasPreview) {
     return (
       <div className="rich-editor-shell">
-        <div className="rich-editor-toolbar">
-          <span className="rich-editor-title">Rich Editor Preview</span>
-          <span className="rich-editor-mode">{activeFeature}</span>
-        </div>
+      <div className="rich-editor-toolbar">
+        <span className="rich-editor-title">Rich Editor Preview</span>
+        <span className="rich-editor-mode">{activeFeature}</span>
+      </div>
         <div
           className="textarea-editor rich-preview-surface"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
+          data-testid="rich-preview"
         />
         <div className="rich-editor-actions">
           <button
             className="btn btn-apply"
-            onClick={() => onAccept(aiResponse || '')}
+            onClick={() => void applyPreviewToEditor()}
             disabled={!aiResponse}
             type="button"
+            data-testid="rich-preview-accept"
           >
             Accept in Editor
           </button>
-          <button className="btn" onClick={onReject} type="button">
+          <button className="btn" onClick={onReject} type="button" data-testid="rich-preview-reject">
             Reject Preview
           </button>
         </div>
@@ -298,7 +347,7 @@ export const ExperimentalTiptapEditor = ({
           {statusLabel}
         </span>
       </div>
-      <EditorContent editor={editor} className="textarea-editor rich-editor-content" />
+      <EditorContent editor={editor} className="textarea-editor rich-editor-content" data-testid="rich-editor" />
     </div>
   )
 }

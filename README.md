@@ -11,14 +11,11 @@ This branch is the stacked PR3 hardening pass on top of the earlier FastAPI + Gr
   - `POST /api/auth/login`
   - `POST /api/auth/refresh`
   - `GET /api/users/me`
-- Compatibility document routes:
-  - `GET /api/document`
-  - `PUT /api/document`
-  - `GET /api/document/version`
 - Strict document routes:
   - `GET /api/documents`
   - `POST /api/documents`
   - `GET /api/documents/:id`
+  - `PUT /api/documents/:id`
   - `PATCH /api/documents/:id`
   - `DELETE /api/documents/:id`
   - `POST /api/documents/:id/restore`
@@ -179,6 +176,6 @@ curl -X POST http://127.0.0.1:4000/api/auth/login \
 
 ## Notes
 
-- The backend document store is still compatibility-first and in-memory.
-- The collab server is deployed in the target architecture, but the current frontend still uses the compatibility document flow rather than full Yjs editor syncing.
+- The rich editor is the primary and only editing surface in the current app.
+- The backend maintains a document-content projection for strict REST document reads, version checks, export, and AI apply flows alongside the Yjs snapshot history persisted by the collab server.
 - This branch is suitable for a private preview, not a public beta.
