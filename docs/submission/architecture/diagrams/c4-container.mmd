@@ -1,23 +1,36 @@
-C4Container
-title Collaborative Document Editor - Container Diagram
+---
+title: C4 Level 2 - Containers
+---
+graph TB
+    user["&lt;&lt;person&gt;&gt;<br/><b>Document User</b><br/><small>Creates/edits docs,<br/>invokes AI, collaborates</small>"]
 
-Person(user, "Document User", "Collaborates on shared documents")
-Person(admin, "Organization Admin", "Configures role and AI policy settings")
-System_Ext(groq, "Groq LLM API", "External LLM inference provider")
-System_Ext(email, "Email Service (Future)", "Outbound notification provider")
+    admin["&lt;&lt;person&gt;&gt;<br/><b>Organization Admin</b><br/><small>Configures roles,<br/>AI feature toggles, quotas</small>"]
 
-Container_Boundary(editor_boundary, "Collaborative Editor Platform") {
-    Container(spa, "React SPA", "React 18, Tiptap 2, Yjs, React Query, Zustand", "Browser UI for editing, presence, version review, sharing, and tracked AI suggestions")
-    Container(api, "FastAPI Backend", "Python 3.12, FastAPI, SQLAlchemy, Pydantic", "Auth, document CRUD, versioning, export, permissions, AI proxy, and admin APIs")
-    Container(collab, "Collaboration Server", "Node.js 20, y-websocket", "Synchronizes Yjs updates, presence awareness, reconnect flows, and snapshot persistence")
-    ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Stores users, documents, permissions, versions, AI logs, and organization AI policy state")
-}
+    groq["&lt;&lt;external system&gt;&gt;<br/><b>Groq LLM API</b><br/><small>LLM inference,<br/>streamed completions</small>"]
 
-Rel(user, spa, "Uses editor and document workspace", "Browser")
-Rel(admin, spa, "Uses admin and sharing UI", "Browser")
-Rel(spa, api, "Calls CRUD, auth, permissions, export, and AI endpoints", "HTTPS / JSON + SSE")
-Rel(spa, collab, "Exchanges CRDT updates and presence state", "WSS / Yjs protocol")
-Rel(api, db, "Reads and writes metadata, permissions, versions, logs, and policies", "SQL")
-Rel(collab, db, "Persists and restores Yjs snapshots", "SQL")
-Rel(api, groq, "Builds prompts and streams model completions", "HTTPS")
-Rel(api, email, "Sends sharing notifications in a future release", "HTTPS / SMTP")
+    subgraph system[" "]
+        spa["&lt;&lt;container&gt;&gt;<br/><b>React SPA</b><br/><small>React 18, Tiptap 2, Yjs,<br/>React Query, Zustand<br/>─────────────────<br/>Editor UI, Yjs client CRDT,<br/>AI suggestion display,<br/>auth, sharing, versioning</small>"]
+        api["&lt;&lt;container&gt;&gt;<br/><b>FastAPI Backend</b><br/><small>Python 3.12, FastAPI,<br/>SQLAlchemy, Pydantic<br/>─────────────────<br/>Auth, doc CRUD, content<br/>projection, AI proxy,<br/>permissions, admin</small>"]
+        collab["&lt;&lt;container&gt;&gt;<br/><b>Collaboration Server</b><br/><small>Node.js 20, y-websocket<br/>─────────────────<br/>CRDT sync, presence<br/>broadcast, snapshot persistence</small>"]
+        db[("&lt;&lt;database&gt;&gt;<br/><b>PostgreSQL</b><br/><small>PostgreSQL 16, Render managed<br/>─────────────────<br/>Users, docs, versions,<br/>permissions, AI logs</small>")]
+        systemlabel["Collaborative Document Editor"]
+    end
+
+    user -->|"HTTPS REST"| spa
+    user <-->|"WebSocket - Yjs binary"| spa
+    admin -->|"HTTPS REST"| spa
+    spa -->|"HTTPS REST + SSE"| api
+    spa <-->|"WebSocket - Yjs binary"| collab
+    api -->|"HTTPS"| groq
+    api -->|"SQL"| db
+    collab -->|"SQL"| db
+
+    style user fill:#08427b,color:#fff,stroke:#fff
+    style admin fill:#08427b,color:#fff,stroke:#fff
+    style groq fill:#999,color:#fff,stroke:#fff
+    style spa fill:#1168bd,color:#fff,stroke:#fff
+    style api fill:#1168bd,color:#fff,stroke:#fff
+    style collab fill:#1168bd,color:#fff,stroke:#fff
+    style db fill:#1168bd,color:#fff,stroke:#fff
+    style system fill:transparent,stroke:#1168bd,stroke-width:2px,color:#1168bd
+    style systemlabel fill:transparent,stroke:none,color:#1168bd,font-weight:bold

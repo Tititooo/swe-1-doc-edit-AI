@@ -1,17 +1,24 @@
-C4Context
-title Collaborative Document Editor with AI Writing Assistant - System Context
+---
+title: C4 Level 1 - System Context
+---
+graph TB
+    user["&lt;&lt;person&gt;&gt;<br/><b>Document User</b><br/><small>Creates/edits docs,<br/>invokes AI, collaborates</small>"]
 
-Person(user, "Document User", "Creates, edits, comments on, shares, and exports collaborative documents")
-Person(admin, "Organization Admin", "Configures AI feature availability, quota policy, and access rules")
+    admin["&lt;&lt;person&gt;&gt;<br/><b>Organization Admin</b><br/><small>Configures roles,<br/>AI feature toggles, quotas</small>"]
 
-System_Ext(groq, "Groq LLM API", "Streams completions for rewrite, summarize, translate, and restructure operations")
-System_Ext(email, "Email Service (Future)", "Sends document share notifications and system emails")
+    system["&lt;&lt;system&gt;&gt;<br/><b>Collaborative Document<br/>Editor</b><br/><small>Real-time collaborative editing<br/>platform with tracked AI suggestions,<br/>version history, and role-based sharing</small>"]
 
-System_Boundary(editor_boundary, "Collaborative Editor Platform") {
-    System(editor, "Collaborative Document Editor", "Real-time collaborative editing platform with tracked AI suggestions, version history, and role-based sharing")
-}
+    groq["&lt;&lt;external system&gt;&gt;<br/><b>Groq LLM API</b><br/><small>Receives prompt,<br/>returns streamed completion</small>"]
 
-Rel(user, editor, "Creates documents, edits collaboratively, invokes AI, reviews suggestions", "HTTPS + WSS")
-Rel(admin, editor, "Configures AI policy, quotas, and role permissions", "HTTPS")
-Rel(editor, groq, "Requests LLM inference through backend proxy and receives streamed output", "HTTPS")
-Rel(editor, email, "Sends future notification emails", "HTTPS / SMTP")
+    email["&lt;&lt;external system&gt;&gt;<br/><b>Email Service (future)</b><br/><small>Sends sharing<br/>notifications</small>"]
+
+    user -->|"HTTPS REST + WSS"| system
+    admin -->|"HTTPS REST"| system
+    system -->|"HTTPS"| groq
+    system -->|"SMTP"| email
+
+    style user fill:#08427b,color:#fff,stroke:#fff
+    style admin fill:#08427b,color:#fff,stroke:#fff
+    style system fill:#1168bd,color:#fff,stroke:#fff
+    style groq fill:#999,color:#fff,stroke:#fff
+    style email fill:#999,color:#fff,stroke:#fff
