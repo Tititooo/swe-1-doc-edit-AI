@@ -15,7 +15,5 @@
     "y-websocket": "^1.5.4",
     "yjs": "^13.6.15"
   },
-  "devDependencies": {
-    "ws": "^8.16.0"
-  }
+  "devDependencies": {}
 }
