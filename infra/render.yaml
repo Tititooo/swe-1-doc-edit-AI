@@ -55,16 +55,20 @@ services:
         value: "30"
       - key: AI_PER_USER_DAILY_TOKEN_LIMIT
         value: "50000"
+      - key: AI_ORG_MONTHLY_TOKEN_BUDGET
+        value: "1000000"
       - key: AI_PER_REQUEST_TOKEN_CAP
         value: "4000"
       - key: AI_REQUIRE_AUTH
         value: "true"
       - key: DEV_BOOTSTRAP_EMAIL
-        value: temiko.dev@local
+        value: atharv.dev@local
       - key: DEV_BOOTSTRAP_PASSWORD
-        value: temiko-preview-pass
+        value: atharv-preview-pass
       - key: CORS_ORIGINS
         value: https://collab-editor-frontend.onrender.com
+      - key: COLLAB_WS_URL
+        value: wss://collab-editor-collab.onrender.com
       - key: PYTHON_VERSION
         value: "3.12"
 
@@ -106,7 +110,7 @@ services:
     name: collab-editor-frontend
     runtime: static
     region: frankfurt
-    rootDir: client
+    rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     headers:

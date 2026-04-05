@@ -52,11 +52,15 @@ CREATE TABLE IF NOT EXISTS documents (
     owner_id    UUID        NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    is_deleted  BOOLEAN     NOT NULL DEFAULT FALSE
+    is_deleted  BOOLEAN     NOT NULL DEFAULT FALSE,
+    deleted_at  TIMESTAMPTZ
 );
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_documents_owner_id  ON documents (owner_id);
 CREATE INDEX IF NOT EXISTS idx_documents_is_deleted ON documents (is_deleted);
+CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON documents (deleted_at);
 
 -- Auto-update updated_at on any row change
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -140,6 +144,32 @@ CREATE INDEX IF NOT EXISTS idx_ai_interactions_doc_id     ON ai_interactions (do
 CREATE INDEX IF NOT EXISTS idx_ai_interactions_user_id    ON ai_interactions (user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_interactions_created_at ON ai_interactions (created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_interactions_user_quota ON ai_interactions (user_id, created_at DESC);
+
+-- =============================================================
+-- ORG AI SETTINGS
+-- Semester-scale single-tenant admin policy state.
+-- Stores feature toggles by role and the effective daily token cap.
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS org_ai_settings (
+    singleton         BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    feature_access    JSONB       NOT NULL,
+    daily_token_limit INT         NOT NULL,
+    monthly_token_budget BIGINT   NOT NULL DEFAULT 1000000,
+    consent_required  BOOLEAN     NOT NULL DEFAULT TRUE,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by        UUID        REFERENCES users (id) ON DELETE SET NULL
+);
+
+INSERT INTO org_ai_settings (singleton, feature_access, daily_token_limit, monthly_token_budget, consent_required)
+VALUES (
+    TRUE,
+    '{"owner":["rewrite","summarize","translate","restructure","continue"],"editor":["rewrite","summarize","translate","restructure","continue"],"commenter":[],"viewer":[]}'::jsonb,
+    50000,
+    1000000,
+    TRUE
+)
+ON CONFLICT (singleton) DO NOTHING;
 
 -- =============================================================
 -- AUTOMATED 90-DAY AI LOG PURGE

@@ -1,0 +1,86 @@
+erDiagram
+    USERS ||--o{ DOCUMENTS : owns
+    USERS ||--o{ DOCUMENT_VERSIONS : creates
+    USERS ||--o{ DOCUMENT_TEXT_VERSIONS : creates
+    USERS ||--o{ PERMISSIONS : receives
+    USERS ||--o{ AI_INTERACTIONS : invokes
+    USERS ||--o| ORG_AI_SETTINGS : updates
+    DOCUMENTS ||--|| DOCUMENT_LIVE_CONTENT : has
+    DOCUMENTS ||--o{ DOCUMENT_TEXT_VERSIONS : records
+    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : stores
+    DOCUMENTS ||--o{ PERMISSIONS : shares
+    DOCUMENTS ||--o{ AI_INTERACTIONS : tracks
+
+    USERS {
+        uuid id PK
+        string email UK
+        string hashed_password
+        string name
+        datetime created_at
+        int daily_ai_tokens_used
+        datetime ai_tokens_reset_at
+    }
+
+    DOCUMENTS {
+        uuid id PK
+        string title
+        uuid owner_id FK
+        boolean is_deleted
+        datetime deleted_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    DOCUMENT_LIVE_CONTENT {
+        uuid doc_id PK, FK
+        text content
+        int version_id
+        datetime updated_at
+    }
+
+    DOCUMENT_TEXT_VERSIONS {
+        uuid id PK
+        uuid doc_id FK
+        int version_number
+        text content
+        uuid created_by FK
+        datetime created_at
+    }
+
+    DOCUMENT_VERSIONS {
+        uuid id PK
+        uuid doc_id FK
+        blob snapshot
+        uuid created_by FK
+        datetime created_at
+    }
+
+    PERMISSIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid user_id FK
+        string role
+        datetime created_at
+    }
+
+    AI_INTERACTIONS {
+        uuid id PK
+        uuid doc_id FK
+        uuid user_id FK
+        string feature
+        text input_text
+        text suggestion_text
+        string status
+        int tokens_used
+        datetime created_at
+    }
+
+    ORG_AI_SETTINGS {
+        boolean singleton PK
+        json feature_access
+        int daily_token_limit
+        bigint monthly_token_budget
+        boolean consent_required
+        uuid updated_by FK
+        datetime updated_at
+    }

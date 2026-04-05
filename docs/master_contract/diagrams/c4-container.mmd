@@ -1,0 +1,23 @@
+C4Container
+title Collaborative Document Editor - Container Diagram
+
+Person(user, "Document User", "Collaborates on shared documents")
+Person(admin, "Organization Admin", "Configures role and AI policy settings")
+System_Ext(groq, "Groq LLM API", "External LLM inference provider")
+System_Ext(email, "Email Service (Future)", "Outbound notification provider")
+
+Container_Boundary(editor_boundary, "Collaborative Editor Platform") {
+    Container(spa, "React SPA", "React 18, Tiptap 2, Yjs, React Query, Zustand", "Browser UI for editing, presence, version review, sharing, and tracked AI suggestions")
+    Container(api, "FastAPI Backend", "Python 3.12, FastAPI, SQLAlchemy, Pydantic", "Auth, document CRUD, versioning, export, permissions, AI proxy, and admin APIs")
+    Container(collab, "Collaboration Server", "Node.js 20, y-websocket", "Synchronizes Yjs updates, presence awareness, reconnect flows, and snapshot persistence")
+    ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Stores users, documents, permissions, versions, AI logs, and organization AI policy state")
+}
+
+Rel(user, spa, "Uses editor and document workspace", "Browser")
+Rel(admin, spa, "Uses admin and sharing UI", "Browser")
+Rel(spa, api, "Calls CRUD, auth, permissions, export, and AI endpoints", "HTTPS / JSON + SSE")
+Rel(spa, collab, "Exchanges CRDT updates and presence state", "WSS / Yjs protocol")
+Rel(api, db, "Reads and writes metadata, permissions, versions, logs, and policies", "SQL")
+Rel(collab, db, "Persists and restores Yjs snapshots", "SQL")
+Rel(api, groq, "Builds prompts and streams model completions", "HTTPS")
+Rel(api, email, "Sends sharing notifications in a future release", "HTTPS / SMTP")

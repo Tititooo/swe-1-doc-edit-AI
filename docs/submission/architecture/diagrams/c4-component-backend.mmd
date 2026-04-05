@@ -1,0 +1,29 @@
+C4Component
+title Collaborative Document Editor - Current FastAPI Backend Component Diagram
+
+Container_Ext(spa, "React SPA", "Browser client", "Calls REST endpoints, opens SSE streams, and requests realtime session bootstrap")
+System_Ext(groq, "Groq LLM API", "External LLM provider")
+ContainerDb_Ext(db, "PostgreSQL", "Managed relational database", "Stores users, document metadata, document content projections, Yjs snapshots, permissions, AI logs, and org AI settings")
+
+Container_Boundary(api_boundary, "FastAPI Backend") {
+    Component(app, "FastAPI App", "backend/api/main.py", "Registers the current route surface, configures lifespan, CORS, and exception handling")
+    Component(auth, "Auth Module", "backend/api/auth.py", "Hashes passwords and issues or validates JWT access and refresh tokens")
+    Component(runtime, "Runtime Service", "backend/api/runtime.py", "Handles login and registration, document metadata, permissions, AI history, quotas, and admin AI settings")
+    Component(store, "Document Content Store", "backend/api/store.py", "Maintains the strict REST document content projection, version ids, and export helpers")
+    Component(schemas, "Schema Layer", "backend/api/schemas.py", "Defines request and response contracts used by the FastAPI routes")
+    Component(ai_service, "AI Service", "backend/ai/service.py", "Dispatches feature-specific AI operations and coordinates streaming or full completions")
+    Component(prompts, "Prompt Engine", "backend/ai/prompts.py", "Builds prompt templates for rewrite, summarize, translate, restructure, and continue-writing flows")
+    Component(groq_client, "Groq API Client", "backend/ai/groq_client.py", "Executes Groq requests with timeout handling and token streaming")
+}
+
+Rel(spa, app, "Calls HTTP endpoints and opens SSE streams", "HTTPS")
+Rel(app, schemas, "Validates request and response payloads")
+Rel(app, auth, "Uses JWT and password helpers")
+Rel(app, runtime, "Delegates auth, document metadata, permissions, quotas, and history logic")
+Rel(app, store, "Delegates strict document content load, save, versioning, and export logic")
+Rel(app, ai_service, "Starts AI requests and handles streaming responses")
+Rel(ai_service, prompts, "Constructs feature-specific prompts")
+Rel(ai_service, groq_client, "Requests model inference")
+Rel(runtime, db, "Reads and writes users, documents, permissions, AI logs, and admin policy state", "SQL")
+Rel(store, db, "Reads and writes document content projections and text versions", "SQL")
+Rel(groq_client, groq, "Streams completions", "HTTPS")
