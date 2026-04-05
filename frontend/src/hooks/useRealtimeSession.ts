@@ -15,7 +15,11 @@ export const useRealtimeSession = (documentId: string | null, enabled: boolean) 
     queryFn: () => createRealtimeSession(documentId!),
     enabled: enabled && !!documentId,
     retry: false,
-    staleTime: 0,
+    staleTime: 1000 * 60 * 10,
+    gcTime: 1000 * 60 * 15,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
   })
 
   useEffect(() => {

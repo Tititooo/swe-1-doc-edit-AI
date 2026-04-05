@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+import json
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -210,6 +211,23 @@ class AppRuntime:
             '"editor":["rewrite","summarize","translate","restructure","continue"],'
             '"commenter":[],"viewer":[]}'
         )
+
+    def _normalize_feature_access(self, value: Any) -> dict[str, list[str]]:
+        if isinstance(value, str):
+            parsed = json.loads(value)
+        else:
+            parsed = value
+
+        if not isinstance(parsed, dict):
+            return {role: list(features) for role, features in DEFAULT_FEATURE_ACCESS.items()}
+
+        normalized: dict[str, list[str]] = {}
+        for role, features in parsed.items():
+            if isinstance(features, list):
+                normalized[str(role)] = [str(feature) for feature in features]
+            else:
+                normalized[str(role)] = []
+        return normalized
 
     def _ai_settings_payload(
         self,
@@ -882,7 +900,7 @@ class AppRuntime:
         if row is None:
             return self._ai_settings_payload()
         return {
-            "feature_access": row["feature_access"],
+            "feature_access": self._normalize_feature_access(row["feature_access"]),
             "daily_token_limit": int(row["daily_token_limit"]),
             "monthly_org_token_budget": int(row["monthly_token_budget"]),
             "consent_required": bool(row["consent_required"]),
@@ -939,7 +957,7 @@ class AppRuntime:
                 UUID(acting_user_id),
             )
         return {
-            "feature_access": row["feature_access"],
+            "feature_access": self._normalize_feature_access(row["feature_access"]),
             "daily_token_limit": int(row["daily_token_limit"]),
             "monthly_org_token_budget": int(row["monthly_token_budget"]),
             "consent_required": bool(row["consent_required"]),
