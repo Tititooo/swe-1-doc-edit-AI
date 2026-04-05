@@ -531,39 +531,11 @@
 }
 
 \subsection{System Design using the C4 Model}
+
+\noindent\textit{The editable Mermaid source files (\texttt{.mmd}) for all diagrams below are maintained in the repository at \url{https://github.com/Tititooo/swe-1-doc-edit-AI/tree/main/docs/master_contract/diagrams}.}
+
+\bigskip
 \textbf{Level 1 - System Context Diagram}
-\begin{verbatim}
----
-title: C4 Level 1 - System Context
----
-graph TB
-    user["<<person>><br/><b>Document User</b><br/><small>Creates/edits docs,
-    invokes AI, collaborates</small>"]
-
-    admin["<<person>><br/><b>Organization Admin</b><br/><small>Configures roles,
-    AI feature toggles, quotas</small>"]
-
-    system["<<system>><br/><b>Collaborative Document Editor</b><br/><small>Real-time
-    collaborative editing platform with tracked AI suggestions,
-    version history, and role-based sharing</small>"]
-
-    groq["<<external system>><br/><b>Groq LLM API</b><br/><small>Receives prompt,
-    returns streamed completion</small>"]
-
-    email["<<external system>><br/><b>Email Service (future)</b><br/><small>Sends sharing
-    notifications</small>"]
-
-    user -->|"HTTPS REST + WSS"| system
-    admin -->|"HTTPS REST"| system
-    system -->|"HTTPS"| groq
-    system -->|"SMTP"| email
-
-    style user fill:#08427b,color:#fff,stroke:#fff
-    style admin fill:#08427b,color:#fff,stroke:#fff
-    style system fill:#1168bd,color:#fff,stroke:#fff
-    style groq fill:#999,color:#fff,stroke:#fff
-    style email fill:#999,color:#fff,stroke:#fff
-\end{verbatim}
 
 \begin{center}
 \includegraphics[width=0.55\textwidth]{docs/master_contract/diagrams/c4-context.png}
@@ -574,55 +546,6 @@ The current system boundary contains one product used by two human actor types. 
 
 \textbf{Level 2 - Container Diagram}
 
-\begin{verbatim}
----
-title: C4 Level 2 - Containers
----
-graph TB
-    user["<<person>><br/><b>Document User</b><br/><small>Creates/edits docs,
-    invokes AI, collaborates</small>"]
-
-    admin["<<person>><br/><b>Organization Admin</b><br/><small>Configures roles,
-    AI feature toggles, quotas</small>"]
-
-    groq["<<external system>><br/><b>Groq LLM API</b><br/><small>LLM inference,
-    streamed completions</small>"]
-
-    subgraph system[" "]
-        spa["<<container>><br/><b>React SPA</b><br/><small>React 18, Tiptap 2, Yjs,
-        React Query, Zustand<br/>-----<br/>Editor UI, Yjs client CRDT,
-        AI suggestion display, auth, sharing, versioning</small>"]
-        api["<<container>><br/><b>FastAPI Backend</b><br/><small>Python 3.12, FastAPI,
-        SQLAlchemy, Pydantic<br/>-----<br/>Auth, doc CRUD, content projection,
-        AI proxy, permissions, admin</small>"]
-        collab["<<container>><br/><b>Collaboration Server</b><br/><small>Node.js 20,
-        y-websocket<br/>-----<br/>CRDT sync, presence broadcast,
-        snapshot persistence</small>"]
-        db[("<<database>><br/><b>PostgreSQL</b><br/><small>PostgreSQL 16, Render managed
-        <br/>-----<br/>Users, docs, versions, permissions, AI logs</small>")]
-        systemlabel["Collaborative Document Editor"]
-    end
-
-    user -->|"HTTPS REST"| spa
-    user <-->|"WebSocket - Yjs binary"| spa
-    admin -->|"HTTPS REST"| spa
-    spa -->|"HTTPS REST + SSE"| api
-    spa <-->|"WebSocket - Yjs binary"| collab
-    api -->|"HTTPS"| groq
-    api -->|"SQL"| db
-    collab -->|"SQL"| db
-
-    style user fill:#08427b,color:#fff,stroke:#fff
-    style admin fill:#08427b,color:#fff,stroke:#fff
-    style groq fill:#999,color:#fff,stroke:#fff
-    style spa fill:#1168bd,color:#fff,stroke:#fff
-    style api fill:#1168bd,color:#fff,stroke:#fff
-    style collab fill:#1168bd,color:#fff,stroke:#fff
-    style db fill:#1168bd,color:#fff,stroke:#fff
-    style system fill:transparent,stroke:#1168bd,stroke-width:2px,color:#1168bd
-    style systemlabel fill:transparent,stroke:none,color:#1168bd,font-weight:bold
-\end{verbatim}
-
 \begin{center}
 \includegraphics[width=0.82\textwidth]{docs/master_contract/diagrams/c4-container.png}
 \end{center}
@@ -631,65 +554,6 @@ graph TB
 The current deployed system has four runtime containers. The browser talks to FastAPI for document, auth, permission, admin, and AI flows, and connects directly to the \texttt{y-websocket} service for rich-editor collaboration. PostgreSQL is shared by both services. The backend also maintains a strict REST document-content projection so the editor, export, and AI apply flows can reload authoritative text content while the collaboration server persists Yjs snapshots independently.
 
 \textbf{Level 3 - Component Diagram}
-\begin{verbatim}
----
-title: C4 Level 3 - FastAPI Backend Components
----
-graph TB
-    spa["<<container>><br/><b>React SPA</b><br/><small>Sends HTTP requests,
-    receives SSE streams</small>"]
-
-    groq["<<external system>><br/><b>Groq LLM API</b><br/><small>Streams completions</small>"]
-
-    db[("<<database>><br/><b>PostgreSQL</b><br/><small>Persistent storage</small>")]
-
-    subgraph api["FastAPI Backend"]
-        app["<<component>><br/><b>FastAPI App</b><br/><small>backend/api/main.py<br/>-----
-        <br/>Route registration, CORS, lifespan, exception handling</small>"]
-        schemas["<<component>><br/><b>Schema Layer</b><br/><small>backend/api/schemas.py
-        <br/>-----<br/>Pydantic request/response contracts</small>"]
-        auth["<<component>><br/><b>Auth Module</b><br/><small>backend/api/auth.py<br/>-----
-        <br/>Password hashing, JWT access and refresh tokens</small>"]
-        runtime["<<component>><br/><b>Runtime Service</b><br/><small>backend/api/runtime.py
-        <br/>-----<br/>Login, registration, doc metadata, permissions,
-        AI history, quotas, admin</small>"]
-        store["<<component>><br/><b>Document Content Store</b><br/><small>backend/api/store.py
-        <br/>-----<br/>REST content projection, version IDs, export</small>"]
-        aisvc["<<component>><br/><b>AI Service</b><br/><small>backend/ai/service.py<br/>-----
-        <br/>Feature dispatch, streaming and full completions</small>"]
-        prompt["<<component>><br/><b>Prompt Engine</b><br/><small>backend/ai/prompts.py
-        <br/>-----<br/>Templates for rewrite, summarize, translate,
-        restructure, continue</small>"]
-        groqclient["<<component>><br/><b>Groq API Client</b><br/><small>
-        backend/ai/groq_client.py<br/>-----<br/>Async HTTP, streaming,
-        timeout handling</small>"]
-    end
-
-    spa -->|"HTTPS REST + SSE"| app
-    app --> schemas
-    app --> auth
-    app --> runtime
-    app --> store
-    app --> aisvc
-    aisvc --> prompt
-    aisvc --> groqclient
-    groqclient -->|"HTTPS"| groq
-    runtime -->|"SQL"| db
-    store -->|"SQL"| db
-
-    style spa fill:#1168bd,color:#fff,stroke:#fff
-    style groq fill:#999,color:#fff,stroke:#fff
-    style db fill:#1168bd,color:#fff,stroke:#fff
-    style app fill:#2a5fa5,color:#fff,stroke:#fff
-    style schemas fill:#2a5fa5,color:#fff,stroke:#fff
-    style auth fill:#2a5fa5,color:#fff,stroke:#fff
-    style runtime fill:#2a5fa5,color:#fff,stroke:#fff
-    style store fill:#2a5fa5,color:#fff,stroke:#fff
-    style aisvc fill:#2a5fa5,color:#fff,stroke:#fff
-    style prompt fill:#2a5fa5,color:#fff,stroke:#fff
-    style groqclient fill:#2a5fa5,color:#fff,stroke:#fff
-    style api fill:transparent,stroke:#1168bd,stroke-width:2px,color:#1168bd
-\end{verbatim}
 
 \begin{center}
 \includegraphics[width=\textwidth]{docs/master_contract/diagrams/c4-component-backend.png}
@@ -1169,88 +1033,6 @@ collab-editor/
 
 \newpage
 \subsection{Data Model}
-\href{https://mermaid.ai/d/5e645a47-b3c3-49fd-9456-8c8ab2c415ca}{Entity-relationship diagram}
-\begin{verbatim}
-erDiagram
-    USERS ||--o{ DOCUMENTS : owns
-    USERS ||--o{ DOCUMENT_VERSIONS : creates
-    USERS ||--o{ DOCUMENT_TEXT_VERSIONS : creates
-    USERS ||--o{ PERMISSIONS : receives
-    USERS ||--o{ AI_INTERACTIONS : invokes
-    USERS ||--o| ORG_AI_SETTINGS : updates
-    DOCUMENTS ||--|| DOCUMENT_LIVE_CONTENT : has
-    DOCUMENTS ||--o{ DOCUMENT_TEXT_VERSIONS : records
-    DOCUMENTS ||--o{ DOCUMENT_VERSIONS : stores
-    DOCUMENTS ||--o{ PERMISSIONS : shares
-    DOCUMENTS ||--o{ AI_INTERACTIONS : tracks
-
-    USERS {
-        uuid id PK
-        string email UK
-        string hashed_password
-        string name
-        datetime created_at
-        int daily_ai_tokens_used
-        datetime ai_tokens_reset_at
-    }
-    DOCUMENTS {
-        uuid id PK
-        string title
-        uuid owner_id FK
-        boolean is_deleted
-        datetime deleted_at
-        datetime created_at
-        datetime updated_at
-    }
-    DOCUMENT_LIVE_CONTENT {
-        uuid doc_id PK, FK
-        text content
-        int version_id
-        datetime updated_at
-    }
-    DOCUMENT_TEXT_VERSIONS {
-        uuid id PK
-        uuid doc_id FK
-        int version_number
-        text content
-        uuid created_by FK
-        datetime created_at
-    }
-    DOCUMENT_VERSIONS {
-        uuid id PK
-        uuid doc_id FK
-        blob snapshot
-        uuid created_by FK
-        datetime created_at
-    }
-    PERMISSIONS {
-        uuid id PK
-        uuid doc_id FK
-        uuid user_id FK
-        string role
-        datetime created_at
-    }
-    AI_INTERACTIONS {
-        uuid id PK
-        uuid doc_id FK
-        uuid user_id FK
-        string feature
-        text input_text
-        text suggestion_text
-        string status
-        int tokens_used
-        datetime created_at
-    }
-    ORG_AI_SETTINGS {
-        boolean singleton PK
-        json feature_access
-        int daily_token_limit
-        bigint monthly_token_budget
-        boolean consent_required
-        uuid updated_by FK
-        datetime updated_at
-    }
-\end{verbatim}
 
 \begin{center}
 \includegraphics[width=\textwidth]{docs/master_contract/diagrams/erd.png}
@@ -1576,7 +1358,7 @@ This PoC does not yet claim full feature parity with every aspirational design d
 
 The current frontend also keeps the document-opening UX intentionally lightweight for Assignment 1: it loads the latest accessible document through the strict document API, or creates one when needed, rather than shipping a full document library selector. The underlying document CRUD routes already exist on the backend, but the richer document-management UI remains future work rather than a PoC requirement.
 
-The repository can be run locally from the provided README, and the editable Mermaid sources for all required diagrams live under \texttt{docs/master\_contract/diagrams/}. A separate demo recording accompanies the submission package; it is not stored in the repository itself.
+The repository can be run locally from the provided README. The editable Mermaid source files (\texttt{.mmd}) for all diagrams in this report are available in the project repository at \url{https://github.com/Tititooo/swe-1-doc-edit-AI/tree/main/docs/master_contract/diagrams}. A separate demo recording accompanies the submission package; it is not stored in the repository itself.
 
 
 
