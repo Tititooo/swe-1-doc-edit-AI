@@ -213,6 +213,7 @@ export const streamAIAction = async ({
         token?: string
         suggestion_id?: string
         message?: string
+        code?: string
       }
 
       if (data.suggestion_id) {
@@ -220,7 +221,11 @@ export const streamAIAction = async ({
       }
 
       if (eventName === 'error') {
-        throw { message: data.message || 'AI streaming failed' } satisfies APIError
+        throw {
+          message: data.message || 'AI streaming failed',
+          code: data.code || 'AI_SERVICE_UNAVAILABLE',
+          status: 503,
+        } satisfies APIError
       }
 
       if (eventName === 'token' && data.token) {
