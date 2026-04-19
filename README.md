@@ -106,7 +106,9 @@ For the full C4 model and architectural decision records see [`docs/master_contr
 ### AI Writing Assistant
 - **Actions:** Rewrite, Summarize, Translate, Restructure, Continue
 - Streamed responses via SSE with cancel support
-- Inline tracked-change proposals (strikethrough + highlight) — accept, reject, or partial-accept
+- Side-by-side Original | AI Suggestion compare card
+- Accept all, **partial accept** (select text in the suggestion → "Apply Selection"), or reject
+- Undo after AI accept (Yjs undo manager, Ctrl/Cmd-Z)
 - Per-user daily token limits, org-level monthly budgets, per-request caps
 - Interaction history with 90-day auto-purge, user-deletable
 
@@ -114,7 +116,8 @@ For the full C4 model and architectural decision records see [`docs/master_contr
 - Full CRUD with soft deletion (30-day recovery window)
 - Version history with non-destructive rollback
 - Export to PDF, DOCX, and Markdown
-- Granular sharing permissions
+- **Share by link** — generate a role-specific invite URL (72-hour expiry); recipients click to join instantly
+- Share by email with role assignment and revocation
 
 ### Authentication & Authorization
 - JWT-based auth (15-min access tokens, 7-day refresh tokens)
@@ -163,9 +166,11 @@ For the full C4 model and architectural decision records see [`docs/master_contr
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/documents/:id/permissions` | List document permissions |
-| POST | `/api/documents/:id/permissions` | Share with a user |
+| POST | `/api/documents/:id/permissions` | Share with a user (by email) |
 | PATCH | `/api/documents/:id/permissions/:user_id` | Update role |
 | DELETE | `/api/documents/:id/permissions/:user_id` | Revoke access |
+| POST | `/api/documents/:id/share-link` | Generate share link token (owner only) |
+| POST | `/api/share/accept` | Accept a share link — adds caller to the document |
 
 </details>
 
