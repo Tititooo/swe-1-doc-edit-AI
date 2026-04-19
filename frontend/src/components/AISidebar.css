@@ -134,3 +134,77 @@
     transform: rotate(360deg);
   }
 }
+
+/* Original vs AI Suggestion comparison card — shown above actions when a
+   response exists. Stacked on narrow viewports; side-by-side on wider. */
+.compare-section {
+  gap: 6px;
+}
+
+.compare-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid #d6deeb;
+  border-radius: 8px;
+  padding: 10px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
+}
+
+.compare-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-color: white;
+  padding: 8px 10px;
+  min-height: 60px;
+}
+
+.compare-column-original {
+  border-color: #3498db;
+  background-color: #f0f7ff;
+}
+
+.compare-column-suggestion {
+  border-color: #27ae60;
+  background-color: #f0fff4;
+}
+
+.compare-column-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #44556a;
+}
+
+.compare-column-original .compare-column-header {
+  color: #1d6fa5;
+}
+
+.compare-column-suggestion .compare-column-header {
+  color: #1e8449;
+}
+
+.compare-column-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2933;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+@media (min-width: 720px) {
+  .compare-card {
+    flex-direction: row;
+  }
+
+  .compare-column {
+    flex: 1;
+    min-width: 0;
+  }
+}

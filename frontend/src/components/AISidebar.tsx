@@ -4,7 +4,7 @@
  * rewrite, summarize, translate, restructure, and continue writing.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AIFeature, AIHistoryItem } from '../types/document'
 import type { AIRequestOptions } from '../hooks/useAI'
 import './AISidebar.css'
@@ -41,6 +41,16 @@ export const AISidebar = ({
   const [notes, setNotes] = useState('')
   const [targetLanguage, setTargetLanguage] = useState('English')
 
+  // Snapshot the selection at the moment the user kicked off the request so
+  // the compare card's Original column stays stable even if the editor blurs
+  // and the live selection clears during streaming.
+  const requestedOriginalRef = useRef<string>('')
+  useEffect(() => {
+    if (!aiResponse) {
+      requestedOriginalRef.current = ''
+    }
+  }, [aiResponse])
+
   const needsSelection = feature !== 'continue'
   const canRun = !needsSelection || !!selectedText.trim()
 
@@ -62,14 +72,16 @@ export const AISidebar = ({
         <h3>AI Assistant</h3>
       </div>
 
-      <div className="sidebar-section">
-        <label className="section-label">
-          {needsSelection ? 'Selected Text' : 'Continue Writing From'}
-        </label>
-        <div className="text-preview selected-text-preview">
-          {needsSelection ? selectedText || 'Select text to use this action.' : 'The end of the current document'}
+      {!aiResponse && (
+        <div className="sidebar-section">
+          <label className="section-label">
+            {needsSelection ? 'Selected Text' : 'Continue Writing From'}
+          </label>
+          <div className="text-preview selected-text-preview">
+            {needsSelection ? selectedText || 'Select text to use this action.' : 'The end of the current document'}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="sidebar-section">
         <label className="section-label">Action</label>
@@ -132,10 +144,25 @@ export const AISidebar = ({
       </div>
 
       {aiResponse && (
-        <div className="sidebar-section">
-          <label className="section-label">{responseLabel}</label>
-          <div className="text-preview rewritten-preview">
-            {isLoading ? `${aiResponse || ''}▌` : aiResponse}
+        <div className="sidebar-section compare-section">
+          <label className="section-label">
+            Compare · {responseLabel}
+          </label>
+          <div className="compare-card">
+            <div className="compare-column compare-column-original">
+              <div className="compare-column-header">Original</div>
+              <div className="compare-column-body" data-testid="ai-compare-original">
+                {needsSelection
+                  ? requestedOriginalRef.current || selectedText || '—'
+                  : 'End of current document'}
+              </div>
+            </div>
+            <div className="compare-column compare-column-suggestion">
+              <div className="compare-column-header">AI Suggestion</div>
+              <div className="compare-column-body" data-testid="ai-compare-suggestion">
+                {isLoading ? `${aiResponse}▌` : aiResponse}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -160,7 +187,8 @@ export const AISidebar = ({
       <div className="sidebar-actions">
         <button
           className="btn btn-rewrite"
-          onClick={() =>
+          onClick={() => {
+            requestedOriginalRef.current = needsSelection ? selectedText : ''
             onRewrite({
               feature,
               style,
@@ -168,7 +196,7 @@ export const AISidebar = ({
               targetLanguage,
               documentText,
             })
-          }
+          }}
           disabled={isLoading || !canRun}
           data-testid="ai-run"
         >
