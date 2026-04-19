@@ -19,7 +19,7 @@ interface AISidebarProps {
   onCancel: () => Promise<void>
   onReject: () => Promise<void>
   onRewrite: (options: AIRequestOptions) => Promise<void>
-  onApply: (newText: string) => void
+  onApply: (newText: string, action?: 'accepted' | 'partial') => void
   isApplyDisabled: boolean
 }
 
@@ -40,6 +40,8 @@ export const AISidebar = ({
   const [style, setStyle] = useState('polished')
   const [notes, setNotes] = useState('')
   const [targetLanguage, setTargetLanguage] = useState('English')
+  const suggestionTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const [partialSelection, setPartialSelection] = useState('')
 
   // Snapshot the selection at the moment the user kicked off the request so
   // the compare card's Original column stays stable even if the editor blurs
@@ -48,6 +50,7 @@ export const AISidebar = ({
   useEffect(() => {
     if (!aiResponse) {
       requestedOriginalRef.current = ''
+      setPartialSelection('')
     }
   }, [aiResponse])
 
@@ -61,6 +64,23 @@ export const AISidebar = ({
     if (activeFeature === 'continue') return 'Continuation'
     return 'Rewritten Version'
   }, [activeFeature])
+
+  const updatePartialSelection = () => {
+    const textarea = suggestionTextareaRef.current
+    if (!textarea) {
+      setPartialSelection('')
+      return
+    }
+
+    const { selectionStart, selectionEnd, value } = textarea
+    if (selectionStart === selectionEnd) {
+      setPartialSelection('')
+      return
+    }
+
+    const selected = value.slice(selectionStart, selectionEnd)
+    setPartialSelection(selected === value ? '' : selected)
+  }
 
   if (!documentText.trim()) {
     return null
@@ -159,9 +179,21 @@ export const AISidebar = ({
             </div>
             <div className="compare-column compare-column-suggestion">
               <div className="compare-column-header">AI Suggestion</div>
-              <div className="compare-column-body" data-testid="ai-compare-suggestion">
-                {isLoading ? `${aiResponse}▌` : aiResponse}
-              </div>
+              <textarea
+                ref={suggestionTextareaRef}
+                className="compare-column-body compare-column-body-input"
+                value={isLoading ? `${aiResponse}▌` : aiResponse}
+                readOnly
+                onSelect={updatePartialSelection}
+                onKeyUp={updatePartialSelection}
+                onMouseUp={updatePartialSelection}
+                data-testid="ai-compare-suggestion"
+              />
+              {!isLoading && (
+                <div className="compare-selection-hint">
+                  Highlight any part of the suggestion to apply only that portion.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -225,11 +257,22 @@ export const AISidebar = ({
         {aiResponse && (
           <button
             className="btn btn-apply"
-            onClick={() => onApply(aiResponse)}
+            onClick={() => onApply(aiResponse, 'accepted')}
             disabled={isApplyDisabled || isLoading}
             data-testid="ai-apply"
           >
             Apply
+          </button>
+        )}
+
+        {aiResponse && !isLoading && (
+          <button
+            className="btn btn-partial"
+            onClick={() => onApply(partialSelection, 'partial')}
+            disabled={isApplyDisabled || !partialSelection}
+            data-testid="ai-apply-partial"
+          >
+            Apply Selected Portion
           </button>
         )}
 

@@ -116,6 +116,15 @@
   background-color: #229954;
 }
 
+.btn-partial {
+  background-color: #0f766e;
+  color: white;
+}
+
+.btn-partial:hover:not(:disabled) {
+  background-color: #115e59;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -196,6 +205,21 @@
   word-break: break-word;
   max-height: 180px;
   overflow-y: auto;
+}
+
+.compare-column-body-input {
+  width: 100%;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+}
+
+.compare-selection-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #4b5563;
 }
 
 @media (min-width: 720px) {

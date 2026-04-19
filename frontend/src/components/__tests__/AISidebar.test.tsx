@@ -44,9 +44,27 @@ describe('AISidebar', () => {
     expect(screen.getByTestId('ai-compare-suggestion')).toHaveTextContent('Improved wording')
 
     fireEvent.click(screen.getByTestId('ai-apply'))
-    expect(onApply).toHaveBeenCalledWith('Improved wording')
+    expect(onApply).toHaveBeenCalledWith('Improved wording', 'accepted')
 
     fireEvent.click(screen.getByTestId('ai-dismiss'))
     expect(onReject).toHaveBeenCalled()
+  })
+
+  test('allows partial acceptance from the selected suggestion text', () => {
+    const onApply = vi.fn()
+
+    render(
+      <AISidebar
+        {...baseProps}
+        aiResponse="Improved wording"
+        onApply={onApply}
+      />
+    )
+
+    const suggestion = screen.getByTestId('ai-compare-suggestion') as HTMLTextAreaElement
+    fireEvent.select(suggestion, { target: { selectionStart: 0, selectionEnd: 8 } })
+
+    fireEvent.click(screen.getByTestId('ai-apply-partial'))
+    expect(onApply).toHaveBeenCalledWith('Improved', 'partial')
   })
 })

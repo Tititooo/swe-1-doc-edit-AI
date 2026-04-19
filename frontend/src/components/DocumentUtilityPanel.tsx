@@ -106,11 +106,13 @@ export const DocumentUtilityPanel = ({
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
+                  data-testid="share-email-input"
                 />
                 <select
                   className="utility-input"
                   value={selectedRole}
                   onChange={(event) => setSelectedRole(event.target.value as DocumentRole)}
+                  data-testid="share-role-select"
                 >
                   <option value="editor">Editor</option>
                   <option value="commenter">Commenter</option>
@@ -120,6 +122,7 @@ export const DocumentUtilityPanel = ({
                   className="utility-primary-button"
                   type="submit"
                   disabled={permissionsSubmitting || submitting}
+                  data-testid="share-submit"
                 >
                   {permissionsSubmitting || submitting ? 'Sharing…' : 'Share Document'}
                 </button>
@@ -149,6 +152,7 @@ export const DocumentUtilityPanel = ({
                             type="button"
                             disabled={permissionsSubmitting}
                             onClick={() => void onRevoke(permission.permissionId)}
+                            data-testid={`revoke-permission-${permission.permissionId}`}
                           >
                             Revoke
                           </button>
@@ -186,6 +190,7 @@ export const DocumentUtilityPanel = ({
                             type="button"
                             disabled={restoringVersion || isCurrent}
                             onClick={() => void onRestore(version.versionId)}
+                            data-testid={`restore-version-${version.versionId}`}
                           >
                             {restoringVersion && !isCurrent ? 'Restoring…' : 'Restore'}
                           </button>

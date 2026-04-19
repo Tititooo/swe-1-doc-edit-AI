@@ -2,17 +2,17 @@ import { expect, test } from '@playwright/test'
 
 test('auth, rich sync, and AI rewrite work end to end', async ({ browser, page }) => {
   const email = `smoke-${Date.now()}@example.com`
-  const password = 'PreviewPass123!'
   const syncMarker = `live-sync-${Date.now()}`
 
   await page.goto('/')
   await page.getByTestId('auth-mode-register').click()
   await page.getByTestId('auth-name').fill('Smoke User')
   await page.getByTestId('auth-email').fill(email)
-  await page.getByTestId('auth-password').fill(password)
+  await page.getByTestId('auth-password').fill('PreviewPass123!')
   await page.getByTestId('auth-submit').click()
 
-  await page.getByTestId('load-document').click()
+  await page.getByTestId('dashboard-create').click()
+  await expect(page.getByTestId('workspace-header')).toBeVisible()
 
   const editor = page.locator('.ProseMirror').first()
   await expect(editor).toBeVisible()
@@ -23,7 +23,7 @@ test('auth, rich sync, and AI rewrite work end to end', async ({ browser, page }
   const context = page.context()
   const secondPage = await context.newPage()
   await secondPage.goto('/')
-  await secondPage.getByTestId('load-document').click()
+  await secondPage.locator('[data-testid^="dashboard-doc-"]').first().click()
   const secondEditor = secondPage.locator('.ProseMirror').first()
   await expect(secondEditor).toBeVisible()
   await expect(secondEditor).toContainText(syncMarker)

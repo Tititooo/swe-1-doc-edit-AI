@@ -91,11 +91,21 @@ export const DocumentWorkspaceHeader = ({
 
       <div className="workspace-header-actions">
         {canShare && (
-          <button className="workspace-action-button" type="button" onClick={onOpenShare}>
+          <button
+            className="workspace-action-button"
+            type="button"
+            onClick={onOpenShare}
+            data-testid="workspace-open-share"
+          >
             Share
           </button>
         )}
-        <button className="workspace-action-button workspace-action-button-secondary" type="button" onClick={onOpenHistory}>
+        <button
+          className="workspace-action-button workspace-action-button-secondary"
+          type="button"
+          onClick={onOpenHistory}
+          data-testid="workspace-open-history"
+        >
           Version History
         </button>
       </div>

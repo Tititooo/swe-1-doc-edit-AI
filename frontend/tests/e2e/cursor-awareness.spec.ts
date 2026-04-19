@@ -18,7 +18,6 @@ test('remote cursor renders with label for the other collaborator', async ({ bro
   const nameB = `Bob-${Date.now()}`
   const emailA = `alice-${Date.now()}@example.com`
   const emailB = `bob-${Date.now()}@example.com`
-  const password = 'PreviewPass123!'
 
   const contextA = await browser.newContext()
   const contextB = await browser.newContext()
@@ -33,11 +32,22 @@ test('remote cursor renders with label for the other collaborator', async ({ bro
     await page.getByTestId('auth-mode-register').click()
     await page.getByTestId('auth-name').fill(name)
     await page.getByTestId('auth-email').fill(email)
-    await page.getByTestId('auth-password').fill(password)
+    await page.getByTestId('auth-password').fill('PreviewPass123!')
     await page.getByTestId('auth-submit').click()
-    await page.getByTestId('load-document').click()
-    await expect(page.locator('.ProseMirror').first()).toBeVisible()
   }
+
+  await pageA.getByTestId('dashboard-create').click()
+  await expect(pageA.locator('.ProseMirror').first()).toBeVisible()
+
+  await pageA.getByTestId('workspace-open-share').click()
+  await pageA.getByTestId('share-email-input').fill(emailB)
+  await pageA.getByTestId('share-role-select').selectOption('editor')
+  await pageA.getByTestId('share-submit').click()
+  await expect(pageA.locator(`text=${emailB}`)).toBeVisible()
+
+  await pageB.reload()
+  await pageB.locator('[data-testid^="dashboard-doc-"]').first().click()
+  await expect(pageB.locator('.ProseMirror').first()).toBeVisible()
 
   // Alice moves her caret so Bob sees a remote cursor. We click into
   // the middle of the first paragraph so the caret has a stable position.

@@ -292,8 +292,12 @@ function App() {
     [content, document?.id, requestRewrite, selectedText]
   )
 
-  const handleApplyRewrite = useCallback(
-    async (newText: string) => {
+  const persistDocumentContent = useCallback(
+    async (
+      nextContent: string,
+      action: 'accepted' | 'partial' = 'accepted',
+      restoreText: string | null = aiResponse
+    ) => {
       if (!document?.id || versionId === null) {
         setLocalErrorMessage('Open a document before applying an AI result.')
         return
@@ -312,19 +316,21 @@ function App() {
 
       try {
         const updatedDocument = await updateDocument(document.id, {
-          content: newText,
+          content: nextContent,
           versionId,
         })
 
         syncDocument(updatedDocument)
         resetSaveState(updatedDocument)
-        await markSuggestion('accepted')
+        await markSuggestion(action)
         clearConflict()
         resetAI()
         setSelection(null)
       } catch (error) {
         const apiError = error as APIError
-        restoreResponse(newText, featureToRestore)
+        if (restoreText) {
+          restoreResponse(restoreText, featureToRestore)
+        }
         setLocalErrorMessage(apiError.message || 'Failed to update document.')
       } finally {
         setIsApplyingSuggestion(false)
@@ -339,10 +345,32 @@ function App() {
       markSuggestion,
       resetAI,
       resetSaveState,
+      aiResponse,
       restoreResponse,
       syncDocument,
       versionId,
     ]
+  )
+
+  const handleApplySidebarSuggestion = useCallback(
+    async (suggestionText: string, action: 'accepted' | 'partial' = 'accepted') => {
+      const mergedContent =
+        selection && activeFeature !== 'continue'
+          ? `${content.slice(0, selection.start)}${suggestionText}${content.slice(selection.end)}`
+          : activeFeature === 'continue'
+            ? `${content.trimEnd()}\n\n${suggestionText}`.trim()
+            : suggestionText
+
+      await persistDocumentContent(mergedContent, action, suggestionText)
+    },
+    [activeFeature, content, persistDocumentContent, selection]
+  )
+
+  const handleApplyEditorPreview = useCallback(
+    async (nextContent: string) => {
+      await persistDocumentContent(nextContent, 'accepted', aiResponse)
+    },
+    [aiResponse, persistDocumentContent]
   )
 
   const handleTextChange = useCallback(
@@ -606,7 +634,7 @@ function App() {
                   isStreaming={aiLoading}
                   onChange={handleTextChange}
                   onSelect={handleSelectText}
-                  onAccept={handleApplyRewrite}
+                  onAccept={handleApplyEditorPreview}
                   onReject={() => void handleRejectSuggestion()}
                   disabled={isApplyingSuggestion}
                 />
@@ -622,7 +650,7 @@ function App() {
                 onCancel={cancelRequest}
                 onReject={handleRejectSuggestion}
                 onRewrite={handleRewrite}
-                onApply={handleApplyRewrite}
+                onApply={handleApplySidebarSuggestion}
                 isApplyDisabled={hasConflict || isApplyingSuggestion || isReadOnlyRole}
               />
             </div>

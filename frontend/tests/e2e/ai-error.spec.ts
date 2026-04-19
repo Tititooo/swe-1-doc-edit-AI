@@ -11,7 +11,6 @@ import { expect, test } from '@playwright/test'
  */
 test('AI stream failure shows friendly banner, hides raw upstream message', async ({ page }) => {
   const email = `ai-error-${Date.now()}@example.com`
-  const password = 'PreviewPass123!'
 
   await page.route('**/api/ai/rewrite', async (route) => {
     await route.fulfill({
@@ -28,10 +27,10 @@ test('AI stream failure shows friendly banner, hides raw upstream message', asyn
   await page.getByTestId('auth-mode-register').click()
   await page.getByTestId('auth-name').fill('Error Tester')
   await page.getByTestId('auth-email').fill(email)
-  await page.getByTestId('auth-password').fill(password)
+  await page.getByTestId('auth-password').fill('PreviewPass123!')
   await page.getByTestId('auth-submit').click()
 
-  await page.getByTestId('load-document').click()
+  await page.getByTestId('dashboard-create').click()
 
   const editor = page.locator('.ProseMirror').first()
   await expect(editor).toBeVisible()
