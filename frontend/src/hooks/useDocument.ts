@@ -14,9 +14,10 @@ interface UseDocumentReturn {
   versionId: number | null
   loading: boolean
   error: APIError | null
-  loadDocument: (docId?: string | null) => Promise<void>
+  loadDocument: (docId?: string | null) => Promise<Document | null>
   setContent: (newContent: string) => void
   syncDocument: (nextDocument: Document) => void
+  updateDocumentState: (updater: (previous: Document | null) => Document | null) => void
   clearError: () => void
   reset: () => void
 }
@@ -33,8 +34,10 @@ export const useDocument = (): UseDocumentReturn => {
     try {
       const doc = docId ? await fetchDocument(docId) : await loadInitialDocument()
       setDocument(doc)
+      return doc
     } catch (err) {
       setError(err as APIError)
+      return null
     } finally {
       setLoading(false)
     }
@@ -49,6 +52,10 @@ export const useDocument = (): UseDocumentReturn => {
   const syncDocument = useCallback((nextDocument: Document) => {
     setDocument(nextDocument)
     setError(null)
+  }, [])
+
+  const updateDocumentState = useCallback((updater: (previous: Document | null) => Document | null) => {
+    setDocument((previous) => updater(previous))
   }, [])
 
   const clearError = useCallback(() => {
@@ -70,6 +77,7 @@ export const useDocument = (): UseDocumentReturn => {
     loadDocument,
     setContent,
     syncDocument,
+    updateDocumentState,
     clearError,
     reset,
   }

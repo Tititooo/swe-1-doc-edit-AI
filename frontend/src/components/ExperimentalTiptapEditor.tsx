@@ -11,6 +11,7 @@ import './ExperimentalTiptapEditor.css'
 interface ExperimentalTiptapEditorProps {
   documentId: string | null
   content: string
+  externalSyncToken?: number
   selection: TextSelection | null
   aiResponse: string | null
   activeFeature: AIFeature
@@ -90,6 +91,7 @@ const parseRealtimeUrl = (wsUrl: string, docId: string) => {
 export const ExperimentalTiptapEditor = ({
   documentId,
   content,
+  externalSyncToken = 0,
   selection,
   aiResponse,
   activeFeature,
@@ -256,6 +258,21 @@ export const ExperimentalTiptapEditor = ({
     if (editor.getText({ blockSeparator: '\n\n' }) === content) return
     editor.commands.setContent(textToHtml(content), false)
   }, [content, documentId, editor, hasPreview])
+
+  useEffect(() => {
+    if (!editor || !documentId || hasPreview) {
+      return
+    }
+
+    const nextText = editor.getText({ blockSeparator: '\n\n' })
+    if (nextText === content) {
+      return
+    }
+
+    seededDocsRef.current.delete(documentId)
+    lastEmittedTextRef.current = content
+    editor.commands.setContent(textToHtml(content), false)
+  }, [content, documentId, editor, externalSyncToken, hasPreview])
 
   useEffect(() => {
     if (!editor || !realtimeContext || hasPreview || !documentId) {

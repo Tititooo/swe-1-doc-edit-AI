@@ -10,11 +10,27 @@ export interface Document {
   lastModified: string
 }
 
+export type DocumentRole = 'owner' | 'editor' | 'commenter' | 'viewer'
+
 export interface DocumentListItem {
   id: string
   title: string
-  role: 'owner' | 'editor' | 'commenter' | 'viewer'
+  role: DocumentRole
   updatedAt: string
+}
+
+export interface DocumentPermissionItem {
+  permissionId: string
+  userId: string
+  email: string
+  name: string
+  role: DocumentRole
+}
+
+export interface DocumentVersionItem {
+  versionId: number
+  createdAt: string
+  createdBy: string
 }
 
 export interface TextSelection {
@@ -55,6 +71,8 @@ export interface UpdateDocumentPayload {
   versionId: number
 }
 
+export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
+
 export interface RealtimeAwarenessUser {
   id: string
   name: string
@@ -64,7 +82,7 @@ export interface RealtimeAwarenessUser {
 export interface RealtimeSession {
   doc_id: string
   ws_url: string
-  role: 'owner' | 'editor' | 'commenter' | 'viewer'
+  role: DocumentRole
   expires_at: string
   token_query_param: 'token'
   awareness_user: RealtimeAwarenessUser
