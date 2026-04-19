@@ -6,6 +6,7 @@ import { ConflictWarningBanner } from './components/ConflictWarningBanner'
 import { ErrorBanner } from './components/ErrorBanner'
 import { ExperimentalTiptapEditor } from './components/ExperimentalTiptapEditor'
 import { LoadDocumentButton } from './components/LoadDocumentButton'
+import { ExportButton } from './components/ExportButton'
 import { useAI } from './hooks/useAI'
 import { useAuth } from './hooks/useAuth'
 import { useDocument } from './hooks/useDocument'
@@ -231,6 +232,7 @@ function App() {
                   isLoading={loading}
                   hasDocument={!!document}
                 />
+                {document && <ExportButton documentId={document.id} onError={setLocalErrorMessage} />}
                 <button className="load-button" onClick={handleLogout} type="button">
                   Sign Out
                 </button>
@@ -251,7 +253,8 @@ function App() {
                 onLoad={handleLoadDocument}
                 isLoading={loading}
                 hasDocument={!!document}
-              />
+                />
+                { document && <ExportButton documentId={document.id} onError={setLocalErrorMessage} />}
             </>
           )}
         </div>
@@ -267,7 +270,7 @@ function App() {
         visible={hasConflict}
         message={conflictMessage || 'Document has changed.'}
         onDismiss={handleDismissConflict}
-      />
+      />z
 
       <main className="app-main">
         {!authReady ? (
