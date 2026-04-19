@@ -23,6 +23,8 @@ from .auth import (
     create_access_token,
     create_doc_access_token,
     create_refresh_token,
+    create_share_link_token,
+    decode_share_link_token,
     decode_token,
 )
 from .config import Settings
@@ -56,6 +58,10 @@ from .schemas import (
     RealtimeAwarenessUser,
     RevertResponse,
     RestructureRequest,
+    ShareLinkAcceptRequest,
+    ShareLinkAcceptResponse,
+    ShareLinkCreateRequest,
+    ShareLinkCreateResponse,
     StreamingRewriteRequest,
     SuggestionEvent,
     SummarizeRequest,
@@ -509,6 +515,65 @@ def create_app() -> FastAPI:
                 detail={"message": "Permission not found.", "code": "DOCUMENT_NOT_FOUND"},
             ) from exc
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post("/api/documents/{doc_id}/share-link", response_model=ShareLinkCreateResponse, status_code=status.HTTP_201_CREATED)
+    async def create_share_link(doc_id: str, payload: ShareLinkCreateRequest, request: Request):
+        """Mint a stateless share-link token for this document. Only owners can create links.
+        Recipients call POST /api/share/accept to join with the embedded role."""
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        await require_document_role(request, doc_id=doc_id, user=user, allowed={"owner"})
+        ttl_hours = 72
+        token = create_share_link_token(
+            doc_id=doc_id, role=payload.role, settings=settings, ttl_hours=ttl_hours
+        )
+        return ShareLinkCreateResponse(token=token, role=payload.role, expires_in_hours=ttl_hours)
+
+    @app.post("/api/share/accept", response_model=ShareLinkAcceptResponse)
+    async def accept_share_link(payload: ShareLinkAcceptRequest, request: Request):
+        """Accept a share-link token. Grants the authenticated user the role encoded in the
+        token. Idempotent — owners are never downgraded."""
+        user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
+        try:
+            claims = decode_share_link_token(payload.token, settings=settings)
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": str(exc), "code": "INVALID_REQUEST"},
+            ) from exc
+        doc_id = claims["doc_id"]
+        link_role = claims["role"]
+
+        # Defence-in-depth: token payload is trusted (signed with JWT_SECRET) but
+        # we never let a claim escalate beyond what share-link creation allows.
+        if link_role not in {"editor", "commenter", "viewer"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Invalid role in share link.", "code": "INVALID_REQUEST"},
+            )
+
+        existing_role = await get_runtime(request).get_document_role(doc_id, user.id)
+        # Never downgrade an existing privileged role via a share link
+        role_rank = {"owner": 4, "editor": 3, "commenter": 2, "viewer": 1}
+        if existing_role is None or role_rank.get(link_role, 0) > role_rank.get(existing_role, 0):
+            try:
+                await get_runtime(request).create_or_update_permission(doc_id, user.id, link_role)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail={"message": "Could not grant access.", "code": "INVALID_REQUEST"},
+                ) from exc
+            effective_role = link_role
+        else:
+            effective_role = existing_role
+
+        try:
+            doc = await get_runtime(request).get_document_detail(doc_id, user.id)
+        except KeyError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Document not found.", "code": "DOCUMENT_NOT_FOUND"},
+            )
+        return ShareLinkAcceptResponse(doc_id=doc_id, role=effective_role, doc_title=doc.get("title", "Untitled"))
 
     @app.get("/api/ai/history", response_model=list[AIHistoryItem])
     async def ai_history(

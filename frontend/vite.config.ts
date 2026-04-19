@@ -11,4 +11,11 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.ts',
+    css: true,
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+  },
 })

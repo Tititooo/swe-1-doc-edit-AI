@@ -254,3 +254,23 @@ class AuthResponse(BaseModel):
     user: UserResponse
     tokenType: Literal["bearer"] = "bearer"
     expiresIn: int
+
+
+class ShareLinkCreateRequest(BaseModel):
+    role: Literal["editor", "commenter", "viewer"] = "viewer"
+
+
+class ShareLinkCreateResponse(BaseModel):
+    token: str
+    role: RoleName
+    expires_in_hours: int
+
+
+class ShareLinkAcceptRequest(BaseModel):
+    token: str
+
+
+class ShareLinkAcceptResponse(BaseModel):
+    doc_id: str
+    role: RoleName
+    doc_title: str

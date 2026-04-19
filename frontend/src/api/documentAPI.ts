@@ -10,6 +10,9 @@ import type {
   APIError,
   Document,
   DocumentListItem,
+  DocumentPermissionItem,
+  DocumentRole,
+  DocumentVersionItem,
   UpdateDocumentPayload,
 } from '../types/document'
 import * as mockAPI from './mockAPI'
@@ -34,6 +37,7 @@ interface FeedbackPayload {
 }
 
 interface HistoryFilters {
+  doc_id?: string
   feature?: string
   status?: string
 }
@@ -41,7 +45,7 @@ interface HistoryFilters {
 interface DocumentListResponse {
   id: string
   title: string
-  role: 'owner' | 'editor' | 'commenter' | 'viewer'
+  role: DocumentRole
   updated_at: string
 }
 
@@ -53,7 +57,7 @@ interface DocumentDetailResponse {
   version_id: number
 }
 
-interface DocumentMutationResponse {
+interface DocumentContentMutationResponse {
   id: string
   title: string
   content: string
@@ -61,12 +65,58 @@ interface DocumentMutationResponse {
   lastModified: string
 }
 
-const toDocument = (payload: DocumentDetailResponse | DocumentMutationResponse): Document => ({
+interface DocumentMetadataMutationResponse {
+  id: string
+  title: string
+  updated_at: string
+  restored?: boolean
+}
+
+interface PermissionListResponse {
+  permission_id: string
+  user_id: string
+  email: string
+  name: string
+  role: DocumentRole
+}
+
+interface PermissionMutationResponse {
+  permission_id: string
+  user_id: string
+  role: DocumentRole
+}
+
+interface DocumentVersionResponse {
+  version_id: number
+  created_at: string
+  created_by: string
+}
+
+interface RevertResponse {
+  version_id: number
+  created_at: string
+}
+
+const toDocument = (payload: DocumentDetailResponse | DocumentContentMutationResponse): Document => ({
   id: payload.id,
   title: payload.title,
   content: payload.content,
   versionId: 'version_id' in payload ? payload.version_id : payload.versionId,
   lastModified: 'updated_at' in payload ? payload.updated_at : payload.lastModified,
+})
+
+const toPermissionItem = (payload: PermissionListResponse): DocumentPermissionItem => ({
+  permissionId: payload.permission_id,
+  userId: payload.user_id,
+  email: payload.email,
+  name: payload.name,
+  role: payload.role,
+})
+
+const toVersionItem = (payload: DocumentVersionResponse): DocumentVersionItem => ({
+  versionId: payload.version_id,
+  createdAt: payload.created_at,
+  createdBy: payload.created_by,
 })
 
 export const fetchDocuments = async (): Promise<DocumentListItem[]> => {
@@ -126,8 +176,135 @@ export const updateDocument = async (docId: string, payload: UpdateDocumentPaylo
     if (MOCK_MODE) {
       return await mockAPI.mockUpdateDocument(docId, payload.content, payload.versionId)
     }
-    const response = await apiClient.put<DocumentMutationResponse>(`/documents/${docId}`, payload)
+    const response = await apiClient.put<DocumentContentMutationResponse>(`/documents/${docId}`, payload)
     return toDocument(response.data)
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const renameDocument = async (
+  docId: string,
+  title: string
+): Promise<{ id: string; title: string; updatedAt: string }> => {
+  try {
+    if (MOCK_MODE) {
+      return await mockAPI.mockRenameDocument(docId, title)
+    }
+    const response = await apiClient.patch<DocumentMetadataMutationResponse>(`/documents/${docId}`, { title })
+    return {
+      id: response.data.id,
+      title: response.data.title,
+      updatedAt: response.data.updated_at,
+    }
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const fetchDocumentPermissions = async (docId: string): Promise<DocumentPermissionItem[]> => {
+  try {
+    if (MOCK_MODE) {
+      return await mockAPI.mockListDocumentPermissions(docId)
+    }
+    const response = await apiClient.get<PermissionListResponse[]>(`/documents/${docId}/permissions`)
+    return response.data.map(toPermissionItem)
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const createDocumentPermission = async (
+  docId: string,
+  userEmail: string,
+  role: DocumentRole
+): Promise<PermissionMutationResponse> => {
+  try {
+    if (MOCK_MODE) {
+      return await mockAPI.mockCreateDocumentPermission(docId, userEmail, role)
+    }
+    const response = await apiClient.post<PermissionMutationResponse>(`/documents/${docId}/permissions`, {
+      user_email: userEmail,
+      role,
+    })
+    return response.data
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const deleteDocumentPermission = async (docId: string, permissionId: string): Promise<void> => {
+  try {
+    if (MOCK_MODE) {
+      await mockAPI.mockDeleteDocumentPermission(docId, permissionId)
+      return
+    }
+    await apiClient.delete(`/documents/${docId}/permissions/${permissionId}`)
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const fetchDocumentVersions = async (docId: string): Promise<DocumentVersionItem[]> => {
+  try {
+    if (MOCK_MODE) {
+      return await mockAPI.mockListDocumentVersions(docId)
+    }
+    const response = await apiClient.get<DocumentVersionResponse[]>(`/documents/${docId}/versions`)
+    return response.data.map(toVersionItem)
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const revertDocumentVersion = async (
+  docId: string,
+  versionId: number
+): Promise<{ versionId: number; createdAt: string }> => {
+  try {
+    if (MOCK_MODE) {
+      return await mockAPI.mockRevertDocumentVersion(docId, versionId)
+    }
+    const response = await apiClient.post<RevertResponse>(`/documents/${docId}/revert/${versionId}`)
+    return {
+      versionId: response.data.version_id,
+      createdAt: response.data.created_at,
+    }
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const createShareLink = async (
+  docId: string,
+  role: DocumentRole
+): Promise<{ token: string; role: DocumentRole; expiresInHours: number }> => {
+  try {
+    if (MOCK_MODE) {
+      return { token: `mock-share-${docId}-${role}`, role, expiresInHours: 72 }
+    }
+    const response = await apiClient.post<{ token: string; role: DocumentRole; expires_in_hours: number }>(
+      `/documents/${docId}/share-link`,
+      { role }
+    )
+    return { token: response.data.token, role: response.data.role, expiresInHours: response.data.expires_in_hours }
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const acceptShareLink = async (
+  token: string
+): Promise<{ docId: string; role: DocumentRole; docTitle: string }> => {
+  try {
+    if (MOCK_MODE) {
+      return { docId: 'mock-doc', role: 'viewer', docTitle: 'Mock Document' }
+    }
+    const response = await apiClient.post<{ doc_id: string; role: DocumentRole; doc_title: string }>(
+      '/share/accept',
+      { token }
+    )
+    return { docId: response.data.doc_id, role: response.data.role, docTitle: response.data.doc_title }
   } catch (error) {
     throw handleAPIError(error)
   }
@@ -261,6 +438,7 @@ export const fetchAIHistory = async (limit = 10, filters: HistoryFilters = {}): 
     const response = await apiClient.get<AIHistoryItem[]>('/ai/history', {
       params: {
         limit,
+        doc_id: filters.doc_id,
         feature: filters.feature,
         status: filters.status,
       },

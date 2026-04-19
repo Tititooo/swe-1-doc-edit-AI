@@ -93,6 +93,40 @@ def create_doc_access_token(
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+def create_share_link_token(
+    *,
+    doc_id: str,
+    role: str,
+    settings: Settings,
+    ttl_hours: int = 72,
+) -> str:
+    """Stateless share-link token. Encodes doc_id + role; valid for ttl_hours.
+    The accept endpoint validates this token and grants the caller the embedded role."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "type": "share_link",
+        "doc_id": doc_id,
+        "role": role,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(hours=ttl_hours)).timestamp()),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_share_link_token(token: str, *, settings: Settings) -> dict[str, str]:
+    """Returns {'doc_id': ..., 'role': ...} or raises AuthError."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as exc:
+        raise AuthError("Invalid or expired share link.") from exc
+    if payload.get("type") != "share_link":
+        raise AuthError("Not a share-link token.")
+    return {
+        "doc_id": str(payload.get("doc_id", "")),
+        "role": str(payload.get("role", "")),
+    }
+
+
 def decode_token(token: str, *, settings: Settings, expected_type: str) -> dict[str, str]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])

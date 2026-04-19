@@ -31,11 +31,13 @@ test('AI stream failure shows friendly banner, hides raw upstream message', asyn
   await page.getByTestId('auth-password').fill(password)
   await page.getByTestId('auth-submit').click()
 
-  await page.getByTestId('load-document').click()
+  await expect(page.getByTestId('document-dashboard')).toBeVisible()
+  await page.getByTestId('dashboard-create').click()
 
   const editor = page.locator('.ProseMirror').first()
   await expect(editor).toBeVisible()
   await editor.click()
+  await page.keyboard.type('The quick brown fox jumps over the lazy dog.')
   await page.keyboard.press('ControlOrMeta+A')
   await page.getByTestId('ai-action-select').selectOption('rewrite')
   await page.getByTestId('ai-run').click()

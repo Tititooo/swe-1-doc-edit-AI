@@ -1,0 +1,129 @@
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #dbe4f0;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.workspace-header-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-nav-button,
+.workspace-action-button {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.workspace-nav-button {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.workspace-action-button {
+  background: #0f766e;
+  color: #fff;
+}
+
+.workspace-action-button-secondary {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.workspace-title-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.workspace-title-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  font-weight: 800;
+  color: #0f172a;
+  padding: 0;
+  outline: none;
+}
+
+.workspace-title-input:disabled {
+  color: #334155;
+}
+
+.workspace-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workspace-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workspace-status-idle,
+.workspace-status-saved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.workspace-status-dirty {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.workspace-status-saving {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.workspace-status-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.workspace-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .workspace-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-header-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .workspace-header-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .workspace-title-input {
+    font-size: 22px;
+  }
+}
