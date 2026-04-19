@@ -116,6 +116,12 @@ export const ExperimentalTiptapEditor = ({
   const [stickySelection, setStickySelection] = useState<TextSelection | null>(null)
   const [realtimeContext, setRealtimeContext] = useState<RealtimeEditorContext | null>(null)
   const [acceptingPreview, setAcceptingPreview] = useState(false)
+  // True once the user has clicked Accept for the current response. Stays
+  // true until a new AI request starts (signaled by aiResponse transitioning
+  // to the empty string in useAI's requestRewrite). Without this flag a
+  // post-accept `restoreResponse` — which App.tsx calls when updateDocument
+  // fails — would re-reveal the preview overlay and break the CI smoke test.
+  const [acceptedCurrentResponse, setAcceptedCurrentResponse] = useState(false)
   // Once we have an AI response, show the preview unconditionally. We used to
   // also require `!!selection`, but the editor now persists across preview
   // toggles (so Ctrl+Z can undo an accept) — which means clicking the AI
@@ -123,7 +129,7 @@ export const ExperimentalTiptapEditor = ({
   // response arrives. The selection range we need for apply is captured in
   // selectionRangeRef at selection time, so losing the React selection state
   // mid-flow is fine.
-  const hasPreview = !!aiResponse && !acceptingPreview
+  const hasPreview = !!aiResponse && !acceptingPreview && !acceptedCurrentResponse
 
   useEffect(() => {
     if (!documentId || !sessionQuery.data) {
@@ -302,10 +308,15 @@ export const ExperimentalTiptapEditor = ({
   )
 
   useEffect(() => {
-    setAcceptingPreview(false)
-    // When the AI response is fully dismissed, reset the sticky selection so
-    // the next request starts clean.
-    if (!aiResponse) {
+    // Reset the in-flight accept state only when a new AI request starts.
+    // useAI's requestRewrite sets aiResponse to '' before tokens arrive —
+    // that's our "fresh request" signal. Going to null instead means
+    // dismissResponse() just fired from the Accept path; keep the
+    // accept-guard in place so a later restoreResponse on update failure
+    // can't re-reveal the preview overlay.
+    if (aiResponse === '') {
+      setAcceptingPreview(false)
+      setAcceptedCurrentResponse(false)
       setStickySelection(null)
     }
   }, [aiResponse])
@@ -316,6 +327,7 @@ export const ExperimentalTiptapEditor = ({
     }
 
     setAcceptingPreview(true)
+    setAcceptedCurrentResponse(true)
 
     try {
       const previewMarkup = textToHtml(aiResponse)
