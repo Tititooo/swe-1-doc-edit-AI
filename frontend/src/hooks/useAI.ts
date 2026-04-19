@@ -26,7 +26,7 @@ interface UseAIReturn {
   restoreResponse: (response: string, feature?: AIFeature) => void
   cancelRequest: () => Promise<void>
   markSuggestion: (action: 'accepted' | 'rejected' | 'partial' | 'cancelled') => Promise<void>
-  refreshHistory: () => Promise<void>
+  refreshHistory: (docId?: string) => Promise<void>
   requestRewrite: (
     documentId: string | null,
     selectedText: string,
@@ -44,10 +44,13 @@ export const useAI = (): UseAIReturn => {
   const [history, setHistory] = useState<AIHistoryItem[]>([])
   const abortControllerRef = useRef<AbortController | null>(null)
   const suggestionIdRef = useRef<string | null>(null)
+  const activeDocIdRef = useRef<string | null>(null)
 
-  const refreshHistory = useCallback(async () => {
+  const refreshHistory = useCallback(async (docId?: string) => {
+    const effectiveDocId = docId ?? activeDocIdRef.current
+    if (!effectiveDocId) return
     try {
-      const items = await fetchAIHistory(8)
+      const items = await fetchAIHistory(8, { doc_id: effectiveDocId })
       setHistory(items)
     } catch {
       // Keep the current UI stable if history cannot be fetched.
@@ -118,6 +121,7 @@ export const useAI = (): UseAIReturn => {
       setAIResponse(null)
       setActiveFeature(options.feature)
       suggestionIdRef.current = null
+      activeDocIdRef.current = documentId
 
       try {
         const controller = new AbortController()
@@ -189,7 +193,8 @@ export const useAI = (): UseAIReturn => {
     setAIError(null)
     setAILoading(false)
     setActiveFeature('rewrite')
-    setHistory([])
+    // History is user-level and persists across AI sessions; cleared by caller
+    // only when switching documents (see useEffect in App.tsx on document?.id).
     abortControllerRef.current = null
     suggestionIdRef.current = null
   }, [])

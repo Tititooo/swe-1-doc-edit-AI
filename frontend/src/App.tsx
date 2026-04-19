@@ -184,7 +184,7 @@ function App() {
 
   useEffect(() => {
     if (!document?.id || (authRequired && !user)) return
-    void refreshHistory()
+    void refreshHistory(document.id)
   }, [authRequired, document?.id, refreshHistory, user])
 
   const handleOpenDocument = useCallback(
@@ -206,7 +206,7 @@ function App() {
       setView('editor')
       setEditorSyncToken((value) => value + 1)
       resetSaveState(loaded)
-      await refreshHistory()
+      await refreshHistory(documentItem.id)
     },
     [
       clearConflict,
@@ -238,7 +238,7 @@ function App() {
     setView('editor')
     setEditorSyncToken((value) => value + 1)
     resetSaveState(created)
-    await refreshHistory()
+    await refreshHistory(created.id)
   }, [
     clearConflict,
     createNewDocument,
@@ -439,7 +439,7 @@ function App() {
       clearConflict()
       resetAI()
       setSelection(null)
-      await Promise.all([loadVersions(document.id), refreshHistory(), refreshDocuments()])
+      await Promise.all([loadVersions(document.id), refreshHistory(document.id), refreshDocuments()])
       return true
     },
     [

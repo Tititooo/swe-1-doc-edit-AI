@@ -5,53 +5,66 @@ import { expect, test } from '@playwright/test'
  * [Bonus] Cursor and selection tracking: Rendering remote cursors and
  * selections in real time is bonus-tier."
  *
- * Two browser contexts open the same document. When one user places a
- * caret in the shared doc, the OTHER user's editor should render a
- * `.collaboration-cursor__caret` (and a `.collaboration-cursor__label`
- * tagged with that user's display name) — these come from Tiptap's
- * `@tiptap/extension-collaboration-cursor` extension bound to the y-websocket
- * awareness channel, driven by the color/name returned from
- * POST /api/realtime/session.
+ * Two browser contexts open the same document as the same registered user.
+ * Yjs assigns each Y.Doc instance a unique clientID, so even though both
+ * contexts share credentials, they appear as distinct collaborators in the
+ * awareness channel. When Context A moves its caret, Context B should
+ * render a `.collaboration-cursor__caret` and a `.collaboration-cursor__label`
+ * showing the user's display name — driven by Tiptap's
+ * `@tiptap/extension-collaboration-cursor` bound to y-websocket awareness,
+ * using the color/name returned from POST /api/realtime/session.
  */
 test('remote cursor renders with label for the other collaborator', async ({ browser }) => {
-  const nameA = `Alice-${Date.now()}`
-  const nameB = `Bob-${Date.now()}`
-  const emailA = `alice-${Date.now()}@example.com`
-  const emailB = `bob-${Date.now()}@example.com`
+  const name = `Collab-${Date.now()}`
+  const email = `collab-${Date.now()}@example.com`
   const password = 'PreviewPass123!'
 
+  // ── Context A: register + create document ──────────────────────────────
   const contextA = await browser.newContext()
-  const contextB = await browser.newContext()
   const pageA = await contextA.newPage()
+  await pageA.goto('/')
+  await pageA.getByTestId('auth-mode-register').click()
+  await pageA.getByTestId('auth-name').fill(name)
+  await pageA.getByTestId('auth-email').fill(email)
+  await pageA.getByTestId('auth-password').fill(password)
+  await pageA.getByTestId('auth-submit').click()
+  await expect(pageA.getByTestId('document-dashboard')).toBeVisible()
+  await pageA.getByTestId('dashboard-create').click()
+  await expect(pageA.locator('.ProseMirror').first()).toBeVisible()
+
+  // ── Context B: login as same user → open the shared document ──────────
+  const contextB = await browser.newContext()
   const pageB = await contextB.newPage()
+  await pageB.goto('/')
+  // Auth panel shows; switch to login mode (register button is default)
+  await pageB.getByTestId('auth-mode-login').click()
+  await pageB.getByTestId('auth-email').fill(email)
+  await pageB.getByTestId('auth-password').fill(password)
+  await pageB.getByTestId('auth-submit').click()
+  await expect(pageB.getByTestId('document-dashboard')).toBeVisible()
 
-  for (const [page, name, email] of [
-    [pageA, nameA, emailA],
-    [pageB, nameB, emailB],
-  ] as const) {
-    await page.goto('/')
-    await page.getByTestId('auth-mode-register').click()
-    await page.getByTestId('auth-name').fill(name)
-    await page.getByTestId('auth-email').fill(email)
-    await page.getByTestId('auth-password').fill(password)
-    await page.getByTestId('auth-submit').click()
-    await page.getByTestId('load-document').click()
-    await expect(page.locator('.ProseMirror').first()).toBeVisible()
-  }
+  // The document created by Context A appears in the dashboard list
+  const firstCardB = pageB.locator('[data-testid^="dashboard-doc-"]').first()
+  await expect(firstCardB).toBeVisible({ timeout: 15_000 })
+  await firstCardB.click()
+  await expect(pageB.locator('.ProseMirror').first()).toBeVisible()
 
-  // Alice moves her caret so Bob sees a remote cursor. We click into
-  // the middle of the first paragraph so the caret has a stable position.
+  // ── Cursor tracking ───────────────────────────────────────────────────
+  // Give both WS sessions a moment to connect and sync awareness state.
+  // Alice types content so the caret has a visible position, then moves
+  // right so the awareness update fires with a non-zero anchor.
   const editorA = pageA.locator('.ProseMirror').first()
   await editorA.click()
+  await pageA.keyboard.type('Hello collaborative world')
   await pageA.keyboard.press('Home')
   await pageA.keyboard.press('ArrowRight')
   await pageA.keyboard.press('ArrowRight')
 
-  const remoteCaretOnBob = pageB.locator('.collaboration-cursor__caret').first()
-  await expect(remoteCaretOnBob).toBeVisible({ timeout: 10_000 })
+  const remoteCaretOnB = pageB.locator('.collaboration-cursor__caret').first()
+  await expect(remoteCaretOnB).toBeVisible({ timeout: 15_000 })
 
-  const remoteLabelOnBob = pageB.locator('.collaboration-cursor__label').first()
-  await expect(remoteLabelOnBob).toHaveText(nameA)
+  const remoteLabelOnB = pageB.locator('.collaboration-cursor__label').first()
+  await expect(remoteLabelOnB).toHaveText(name)
 
   await contextA.close()
   await contextB.close()

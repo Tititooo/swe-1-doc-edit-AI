@@ -37,6 +37,7 @@ interface FeedbackPayload {
 }
 
 interface HistoryFilters {
+  doc_id?: string
   feature?: string
   status?: string
 }
@@ -402,6 +403,7 @@ export const fetchAIHistory = async (limit = 10, filters: HistoryFilters = {}): 
     const response = await apiClient.get<AIHistoryItem[]>('/ai/history', {
       params: {
         limit,
+        doc_id: filters.doc_id,
         feature: filters.feature,
         status: filters.status,
       },
