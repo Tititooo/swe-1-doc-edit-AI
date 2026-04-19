@@ -17,7 +17,14 @@ from ai.groq_client import GroqChatClient, GroqClientError
 from ai.quota import AIQuotaExceededError, estimate_tokens
 from ai.service import AIService, FakeAIService
 
-from .auth import AuthError, AuthSubject, create_access_token, create_refresh_token, decode_token
+from .auth import (
+    AuthError,
+    AuthSubject,
+    create_access_token,
+    create_doc_access_token,
+    create_refresh_token,
+    decode_token,
+)
 from .config import Settings
 from .runtime import AppRuntime, RuntimeUser
 from .schemas import (
@@ -350,15 +357,17 @@ def create_app() -> FastAPI:
     async def create_realtime_session(payload: RealtimeSessionRequest, request: Request):
         user = await resolve_user(request, allow_fallback=not settings.ai_require_auth)
         role = await require_document_role(request, doc_id=payload.doc_id, user=user)
-        access_token = request.headers.get("Authorization", "").partition(" ")[2]
-        if not access_token:
-            access_token = create_access_token(
-                AuthSubject(user_id=user.id, email=user.email, role=user.role, name=user.name),
-                settings,
-            )
+        doc_token = create_doc_access_token(
+            user_id=user.id,
+            doc_id=payload.doc_id,
+            role=role,
+            settings=settings,
+        )
         ws_url = f"{settings.collab_ws_url.rstrip('/')}/doc/{payload.doc_id}"
-        ws_url = f"{ws_url}?token={access_token}"
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+        ws_url = f"{ws_url}?token={doc_token}"
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=settings.realtime_token_ttl_seconds
+        )
         palette = ["#0f766e", "#1d4ed8", "#7c3aed", "#be123c", "#a16207", "#4338ca"]
         color = palette[sum(ord(char) for char in user.id) % len(palette)]
         return RealtimeSessionResponse(

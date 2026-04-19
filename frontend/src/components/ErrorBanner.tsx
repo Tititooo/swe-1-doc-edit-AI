@@ -23,7 +23,7 @@ export const ErrorBanner = ({
   visible,
   message = 'AI service unavailable, please try again later.',
   onDismiss,
-  autoDismissMs = 5000,
+  autoDismissMs = 10000,
 }: ErrorBannerProps) => {
   useEffect(() => {
     if (!visible) return

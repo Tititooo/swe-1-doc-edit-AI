@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import jwt
+
 from api.main import create_app
+from ai.groq_client import GroqClientError
 from ai.service import SuggestionHandle
 
 
@@ -38,6 +41,20 @@ class FakeAIService:
 
     async def cancel(self, suggestion_id: str) -> bool:
         return suggestion_id == "suggestion-123"
+
+
+class _MidStreamFailingAIService(FakeAIService):
+    """Yields one token, then raises GroqClientError. Used to prove the
+    stream_feature handler catches provider failures mid-iterator and emits
+    the documented SSE error envelope (`event: error`, `code:
+    AI_SERVICE_UNAVAILABLE`) instead of hard-closing the connection."""
+
+    async def stream_feature(self, feature: str, selected_text: str, **kwargs):
+        async def iterator():
+            yield "partial"
+            raise GroqClientError("upstream groq timed out")
+
+        return SuggestionHandle("suggestion-mid-error", feature, asyncio.Event()), iterator()
 
 
 def create_test_client(monkeypatch, *, auth_required: bool = False) -> TestClient:
@@ -257,7 +274,10 @@ def test_realtime_session_and_restore_document(monkeypatch):
     realtime_body = realtime.json()
     assert realtime_body["doc_id"] == doc_id
     assert realtime_body["role"] == "owner"
-    assert realtime_body["ws_url"].endswith(f"/doc/{doc_id}?token={auth['accessToken']}")
+    # WS URL carries a doc-scoped token (not the bearer access token): see
+    # test_realtime_session_token_is_doc_scoped for the claim-level contract.
+    assert realtime_body["ws_url"].startswith(f"ws://localhost:1234/doc/{doc_id}?token=")
+    assert f"token={auth['accessToken']}" not in realtime_body["ws_url"]
     assert realtime_body["awareness_user"]["name"] == "Owner"
 
     deleted = client.delete(f"/api/documents/{doc_id}", headers=headers)
@@ -409,3 +429,95 @@ def test_admin_can_update_ai_settings(monkeypatch):
     blocked = client.post("/api/ai/summarize", json={"doc_id": "doc-001", "selection": {"text": "Hello"}}, headers=writer_headers)
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"
+
+
+def test_ai_stream_emits_error_event_on_groq_failure(monkeypatch):
+    client = create_test_client(monkeypatch, auth_required=True)
+    client.app.state.ai_service = _MidStreamFailingAIService()
+
+    auth = client.post(
+        "/api/auth/register",
+        json={"email": "midfail@example.com", "password": "PreviewPass123!", "name": "Mid"},
+    ).json()
+    headers = auth_headers(auth["accessToken"])
+    preview_doc_id = client.app.state.runtime.preview_doc_id
+
+    with client.stream(
+        "POST",
+        "/api/ai/rewrite",
+        json={"doc_id": preview_doc_id, "selection": {"text": "Hello"}, "style": "formal"},
+        headers=headers,
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(line.decode() if isinstance(line, bytes) else line for line in response.iter_lines())
+
+    # Partial token must have been delivered before the failure…
+    assert "event: token" in body
+    assert '"token":"partial"' in body
+    # …and the error event must carry the documented shape so the frontend
+    # can surface a friendly message (`AI_SERVICE_UNAVAILABLE`).
+    assert "event: error" in body
+    assert '"code": "AI_SERVICE_UNAVAILABLE"' in body
+    assert "upstream groq timed out" in body
+
+
+def test_realtime_session_requires_doc_role(monkeypatch):
+    client = create_test_client(monkeypatch, auth_required=True)
+
+    # A newly registered user has no permission on a synthetic doc UUID
+    # that was never shared with them — the endpoint must refuse to mint
+    # a doc-scoped token for it.
+    auth = client.post(
+        "/api/auth/register",
+        json={"email": "outsider@example.com", "password": "PreviewPass123!", "name": "Outsider"},
+    ).json()
+    headers = auth_headers(auth["accessToken"])
+
+    forbidden = client.post(
+        "/api/realtime/session",
+        json={"doc_id": "00000000-0000-0000-0000-dead000beef0"},
+        headers=headers,
+    )
+    # `require_document_role` returns 404 DOCUMENT_NOT_FOUND whenever the
+    # caller has no role on the doc — the existence vs permission distinction
+    # is intentionally hidden (don't leak doc-id enumeration). So the same
+    # code covers both "doc does not exist" and "user has no access".
+    assert forbidden.status_code == 404
+    assert forbidden.json()["code"] == "DOCUMENT_NOT_FOUND"
+
+
+def test_realtime_session_token_is_doc_scoped(monkeypatch):
+    """The token minted for the WS URL must be doc-scoped (type='doc_access',
+    doc_id claim matches). This is what closes the A1 review deduction: a
+    leaked bearer can no longer be replayed against other document UUIDs."""
+
+    client = create_test_client(monkeypatch, auth_required=True)
+
+    auth = client.post(
+        "/api/auth/register",
+        json={"email": "scoped@example.com", "password": "PreviewPass123!", "name": "Scoped"},
+    ).json()
+    headers = auth_headers(auth["accessToken"])
+
+    created = client.post("/api/documents", json={"title": "Scoped Doc"}, headers=headers)
+    assert created.status_code == 201
+    doc_id = created.json()["id"]
+
+    realtime = client.post("/api/realtime/session", json={"doc_id": doc_id}, headers=headers)
+    assert realtime.status_code == 200
+    ws_url = realtime.json()["ws_url"]
+
+    # Pull ?token=... out of the URL without pulling in urllib just for this.
+    token = ws_url.split("?token=", 1)[1]
+
+    settings = client.app.state.settings
+    decoded = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+
+    assert decoded["type"] == "doc_access"
+    assert decoded["doc_id"] == doc_id
+    assert decoded["role"] == "owner"
+    # sub is the user id — confirm we can correlate the token back to the caller.
+    user_id = client.app.state.runtime._memory_users_by_email["scoped@example.com"].id
+    assert decoded["sub"] == user_id
+    # Must NOT be reusable as a generic bearer.
+    assert decoded["type"] != "access"

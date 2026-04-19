@@ -24,6 +24,12 @@ Thumbs.db
 
 *.log
 logs/
+logs_*/
 submission.*
 !submission.tex
 
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/
+
+temiko_materials/

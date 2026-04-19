@@ -27,7 +27,9 @@ export const createRealtimeExtensions = ({ document, provider, user }: RealtimeE
 ]
 
 export const createLocalExtensions = () => [
-  StarterKit.configure({
-    history: false,
-  }),
+  // Local (no-Yjs) mode: keep StarterKit's history plugin enabled so Ctrl+Z
+  // works. In realtime mode history is disabled because @tiptap/extension-
+  // collaboration owns undo via y-prosemirror's yUndoPlugin, which would
+  // conflict with StarterKit's history.
+  StarterKit,
 ]

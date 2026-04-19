@@ -47,6 +47,10 @@ jobs:
         working-directory: backend/collab
         run: npm ci
 
+      - name: Run collab unit tests
+        working-directory: backend/collab
+        run: npm test
+
       - name: Run frontend lint
         working-directory: frontend
         run: npm run lint

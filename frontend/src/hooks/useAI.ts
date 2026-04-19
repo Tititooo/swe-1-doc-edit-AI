@@ -146,13 +146,20 @@ export const useAI = (): UseAIReturn => {
           setAIError(null)
         } else {
           const nextError = err as APIError
-          const unavailable = nextError.status === 429 || nextError.status === 503 || nextError.status === 504
+          const unavailable =
+            nextError.status === 429 ||
+            nextError.status === 503 ||
+            nextError.status === 504 ||
+            nextError.code === 'AI_SERVICE_UNAVAILABLE' ||
+            nextError.code === 'AI_QUOTA_EXCEEDED'
           setAIError(
             unavailable
               ? { ...nextError, message: 'AI is temporarily unavailable. Please retry shortly.' }
               : nextError
           )
-          setAIResponse(null)
+          // Preserve any partial stream output with an indicator so the user
+          // can see what was generated before the failure (Assignment §3.2).
+          setAIResponse((prev) => (prev ? `${prev} [stream interrupted]` : null))
         }
       } finally {
         abortControllerRef.current = null

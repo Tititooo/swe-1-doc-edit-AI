@@ -66,6 +66,33 @@ def create_refresh_token(subject: AuthSubject, settings: Settings) -> str:
     )
 
 
+def create_doc_access_token(
+    *,
+    user_id: str,
+    doc_id: str,
+    role: str,
+    settings: Settings,
+    ttl_seconds: int | None = None,
+) -> str:
+    """Doc-scoped realtime token. Bound to a single doc_id so a leaked token
+    cannot be replayed against other documents. The collab server validates
+    both the signature and the doc_id claim at WebSocket upgrade.
+
+    TTL defaults to Settings.realtime_token_ttl_seconds (10 min) so the
+    bootstrap endpoint and this minter stay in sync."""
+    now = datetime.now(timezone.utc)
+    ttl = ttl_seconds if ttl_seconds is not None else settings.realtime_token_ttl_seconds
+    payload = {
+        "sub": user_id,
+        "doc_id": doc_id,
+        "role": role,
+        "type": "doc_access",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=ttl)).timestamp()),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
 def decode_token(token: str, *, settings: Settings, expected_type: str) -> dict[str, str]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])

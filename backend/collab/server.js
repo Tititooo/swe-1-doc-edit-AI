@@ -38,32 +38,10 @@ if (!JWT_SECRET) {
 }
 
 // -------------------------------------------------------------------
-// JWT verification (lightweight — no full FastAPI dependency)
-// We validate the access token on the WebSocket upgrade request.
-// If invalid, the connection is rejected before y-websocket touches it.
+// JWT verification — delegated to auth.js so it's unit-testable under
+// node:test without spinning up the WebSocket server.
 // -------------------------------------------------------------------
-const jwt = require('jsonwebtoken');
-
-/**
- * Extract and verify the JWT from the WebSocket upgrade request.
- * Clients must pass the token as a query parameter:
- *   wss://collab.example.com?token=<access_token>
- *
- * @param {http.IncomingMessage} req
- * @returns {{ userId: string, email: string } | null}
- */
-function verifyRequest(req) {
-  try {
-    const url = new URL(req.url, `http://localhost`);
-    const token = url.searchParams.get('token');
-    if (!token) return null;
-
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    return { userId: payload.sub, email: payload.email };
-  } catch {
-    return null;
-  }
-}
+const { verifyRequest } = require('./auth');
 
 // -------------------------------------------------------------------
 // HTTP server (y-websocket needs a plain http.Server)
@@ -112,16 +90,8 @@ wss.on('connection', (ws, req, context) => {
 // WebSocket upgrade — authenticate before accepting the connection
 // -------------------------------------------------------------------
 server.on('upgrade', (req, socket, head) => {
-  const user = verifyRequest(req);
-
-  if (!user) {
-    console.warn('[server] Rejected unauthenticated WebSocket upgrade');
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  // Extract docName from the path: /doc/<uuid>
+  // Extract docName from the path first — the token must prove authorization
+  // for THIS specific document, not just any document the holder's JWT allows.
   const url = new URL(req.url, 'http://localhost');
   const pathMatch = url.pathname.match(/^\/doc\/([^/?]+)/);
 
@@ -133,6 +103,14 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const docName = pathMatch[1];
+  const user = verifyRequest(req, docName, JWT_SECRET);
+
+  if (!user) {
+    console.warn(`[server] Rejected WebSocket upgrade for doc=${docName} — invalid or wrong-doc token`);
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, { docName, user });

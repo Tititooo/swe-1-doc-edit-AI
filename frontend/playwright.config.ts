@@ -3,6 +3,11 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
+  // Tests share a single in-memory FastAPI backend (no per-worker isolation),
+  // so two-way AI/doc flows can step on each other's state. Serial execution
+  // is the cheap reliability fix; total runtime stays <15 s even on CI.
+  workers: 1,
+  fullyParallel: false,
   use: {
     baseURL: 'http://127.0.0.1:4317',
     trace: 'retain-on-failure',
