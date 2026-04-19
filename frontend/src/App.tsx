@@ -142,12 +142,16 @@ function App() {
 
   const authShellVisible = authReady && authRequired && !user
 
+  // Refresh document list whenever the dashboard becomes visible — covers:
+  // - initial load after auth ready
+  // - returning from the editor (shared docs from others now appear)
+  // - User B seeing docs shared while they were elsewhere
   useEffect(() => {
-    if (!authReady || authShellVisible) {
+    if (!authReady || authShellVisible || view !== 'dashboard') {
       return
     }
     void refreshDocuments()
-  }, [authReady, authShellVisible, refreshDocuments])
+  }, [authReady, authShellVisible, refreshDocuments, view])
 
   useEffect(() => {
     if (realtimeSession?.role) {
@@ -607,6 +611,7 @@ function App() {
             creating={creating}
             onCreate={handleCreateDocument}
             onOpen={handleOpenDocument}
+            onRefresh={refreshDocuments}
           />
         ) : !document ? (
           <div className="placeholder-state">

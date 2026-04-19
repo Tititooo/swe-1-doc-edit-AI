@@ -84,6 +84,20 @@ wss.on('connection', (ws, req, context) => {
       });
     }
   }
+
+  // Flush snapshot on disconnect. forceFlush() is a no-op when the doc is
+  // not dirty, so calling it on every close is safe. This ensures that
+  // work typed between the 30-second auto-snapshot ticks is persisted even
+  // if the collab server restarts before the timer fires — critical for
+  // newly created documents that have no prior snapshot in PostgreSQL.
+  ws.on('close', () => {
+    const ydoc = docs.get(docName);
+    if (ydoc) {
+      forceFlush(docName, ydoc).catch((err) => {
+        console.error(`[server] Flush-on-disconnect failed for "${docName}":`, err.message);
+      });
+    }
+  });
 });
 
 // -------------------------------------------------------------------

@@ -1,13 +1,19 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { DocumentDashboard } from '../DocumentDashboard'
 
+const baseProps = {
+  loading: false,
+  creating: false,
+  onCreate: vi.fn().mockResolvedValue(undefined),
+  onOpen: vi.fn().mockResolvedValue(undefined),
+  onRefresh: vi.fn().mockResolvedValue(undefined),
+}
+
 describe('DocumentDashboard', () => {
   test('renders documents with role badges and opens a selected document', () => {
-    const onCreate = vi.fn().mockResolvedValue(undefined)
-    const onOpen = vi.fn().mockResolvedValue(undefined)
-
     render(
       <DocumentDashboard
+        {...baseProps}
         documents={[
           {
             id: 'doc-1',
@@ -16,10 +22,6 @@ describe('DocumentDashboard', () => {
             updatedAt: '2026-04-19T10:00:00.000Z',
           },
         ]}
-        loading={false}
-        creating={false}
-        onCreate={onCreate}
-        onOpen={onOpen}
       />
     )
 
@@ -27,7 +29,7 @@ describe('DocumentDashboard', () => {
     expect(screen.getByText('editor')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('dashboard-doc-doc-1'))
-    expect(onOpen).toHaveBeenCalledWith({
+    expect(baseProps.onOpen).toHaveBeenCalledWith({
       id: 'doc-1',
       title: 'Project Proposal',
       role: 'editor',
@@ -36,20 +38,8 @@ describe('DocumentDashboard', () => {
   })
 
   test('fires the create handler from the new document button', () => {
-    const onCreate = vi.fn().mockResolvedValue(undefined)
-    const onOpen = vi.fn().mockResolvedValue(undefined)
-
-    render(
-      <DocumentDashboard
-        documents={[]}
-        loading={false}
-        creating={false}
-        onCreate={onCreate}
-        onOpen={onOpen}
-      />
-    )
-
+    render(<DocumentDashboard {...baseProps} documents={[]} />)
     fireEvent.click(screen.getByTestId('dashboard-create'))
-    expect(onCreate).toHaveBeenCalled()
+    expect(baseProps.onCreate).toHaveBeenCalled()
   })
 })
