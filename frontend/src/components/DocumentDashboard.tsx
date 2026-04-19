@@ -7,6 +7,7 @@ interface DocumentDashboardProps {
   creating: boolean
   onCreate: () => Promise<void>
   onOpen: (document: DocumentListItem) => Promise<void>
+  onRefresh: () => unknown
 }
 
 const formatDate = (value: string) =>
@@ -21,6 +22,7 @@ export const DocumentDashboard = ({
   creating,
   onCreate,
   onOpen,
+  onRefresh,
 }: DocumentDashboardProps) => {
   return (
     <section className="dashboard-shell" data-testid="document-dashboard">
@@ -30,15 +32,27 @@ export const DocumentDashboard = ({
           <h2>Your documents</h2>
           <p>Open an existing draft or create a new one before jumping into collaboration and AI tools.</p>
         </div>
-        <button
-          className="dashboard-create-button"
-          type="button"
-          onClick={() => void onCreate()}
-          disabled={creating}
-          data-testid="dashboard-create"
-        >
-          {creating ? 'Creating…' : 'New Document'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="dashboard-create-button"
+            type="button"
+            onClick={() => void onRefresh()}
+            disabled={loading}
+            data-testid="dashboard-refresh"
+            style={{ background: 'transparent', border: '1px solid #cbd5e1', color: '#475569' }}
+          >
+            {loading ? '…' : '↻ Refresh'}
+          </button>
+          <button
+            className="dashboard-create-button"
+            type="button"
+            onClick={() => void onCreate()}
+            disabled={creating}
+            data-testid="dashboard-create"
+          >
+            {creating ? 'Creating…' : 'New Document'}
+          </button>
+        </div>
       </div>
 
       {loading ? (
