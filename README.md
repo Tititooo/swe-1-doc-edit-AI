@@ -1,6 +1,25 @@
 # Collaborative Document Editor with AI Writing Assistant
 
-A real-time collaborative document editing platform with an integrated AI writing assistant — built as part of the Software Engineering course (AI1220) at MBZUAI, Spring 2026. Think simplified Google Docs with embedded LLM-powered features: multiple users edit the same document simultaneously, see each other's cursors in real time, and invoke an AI assistant that can rewrite, summarize, translate, or restructure selected text.
+## Abstract
+
+This project delivers a full-stack, real-time collaborative document editor with an integrated AI writing assistant, built as Assignment 2 of AI1220 (Software Engineering) at MBZUAI, Spring 2026. The system lets multiple authenticated users co-edit the same document simultaneously using Yjs CRDT over WebSocket, with live remote-cursor awareness, role-based access control (owner / editor / commenter / viewer), and an AI sidebar that streams rewrite, summarise, translate, restructure, and continue-writing suggestions token-by-token via Server-Sent Events. The backend is FastAPI (Python 3.12) with PostgreSQL persistence and a separate Node.js y-websocket collaboration server; the frontend is React 18 + Tiptap + Zustand. Authentication uses short-lived HS256 JWTs with silent refresh. All five assignment bonus items are implemented: CRDT conflict resolution (Yjs), remote cursor tracking, share-by-link with configurable roles, partial AI suggestion acceptance, and an end-to-end Playwright test suite covering the full login → AI-accept flow. The system is deployed on Render and runnable locally with a single `./run.sh` command.
+
+---
+
+## Table of Contents
+
+1. [Team](#team)
+2. [Live Deployment](#live-deployment-render)
+3. [Demo Script (5 min)](#demo-script-5-min)
+4. [Scope — Implemented vs Deferred](#scope--implemented-vs-deferred)
+5. [Tech Stack](#tech-stack)
+6. [Architecture](#architecture)
+7. [Features](#features)
+8. [API Reference](#api-reference)
+9. [Local Setup](#local-setup)
+10. [Testing](#testing)
+11. [Deployment (Render)](#deployment-render)
+12. [Project Structure](#project-structure)
 
 ---
 
@@ -26,6 +45,42 @@ A real-time collaborative document editing platform with an integrated AI writin
 | Collab WebSocket Server | https://collab-editor-collab.onrender.com (`/health`) |
 | PostgreSQL 16 | Managed database (no public URL — reachable from backend + collab services) |
 > Services on the Render free/starter tier may cold-start after inactivity. Allow ~30 seconds on first request.
+
+---
+
+## Scope — Implemented vs Deferred
+
+### Fully Implemented
+| Feature | Notes |
+|---------|-------|
+| Authentication (JWT, bcrypt, refresh tokens) | 15-min access / 7-day refresh, silent re-auth, session persistence |
+| Document dashboard (list, create, open) | Role-filtered; creator becomes owner |
+| Rich-text editor (Tiptap) | Headings, bold, italic, lists, code blocks, inline formatting |
+| Auto-save with status indicator | Debounced PUT with version-conflict retry |
+| Version history + restore | Snapshot-based revert; Yjs re-seeded via externalSyncToken |
+| Sharing (invite by email, revoke, share-by-link) | Role-scoped invite links (72-hour JWT), role-rank downgrade guard |
+| Role-based access control | Server-side enforcement on every route; viewer/commenter read-only banner |
+| Export (PDF, DOCX, Markdown) | GET /api/documents/:id/export?format=... |
+| Real-time CRDT collaboration | Yjs + y-websocket; character-level merge, offline resilience |
+| Remote cursor awareness | Tiptap CollaborationCursor; distinct colour + name label per user |
+| AI streaming (SSE) | Token-by-token; cancel mid-stream; error banner preserves partial output |
+| AI features (5) | Rewrite, Summarize, Translate, Restructure, Continue |
+| Suggestion UX | Original vs AI Suggestion compare card; Accept All, Partial Accept, Reject |
+| Undo after AI accept | Yjs undo manager (y-prosemirror), Ctrl/Cmd-Z |
+| AI interaction history | Per-document, last 8, shown in sidebar after each interaction |
+| Per-user quota + admin settings | Daily token limit, org monthly budget, per-request cap, role toggles |
+| Full test suite | 13 pytest, 6 Vitest component, 3 Playwright E2E (login → AI accept) |
+
+### Intentionally Deferred / Out of Scope
+| Feature | Reason |
+|---------|--------|
+| Google OAuth | Rubric says "JWT-based authentication"; OAuth adds operational complexity without rubric credit. Documented in DEVIATIONS.md §1. |
+| Horizontal WebSocket scaling | Single-instance y-websocket sufficient for demo scale. Upgrade path: Hocuspocus + Redis. Documented in DEVIATIONS.md §5. |
+| Email notification delivery | Planned in A1; deprioritised — no SMTP credentials available on Render free tier. |
+| Full Yjs-native snapshot restore | Revert goes via REST PUT; brief CRDT convergence window acceptable for demo scale. Documented in DEVIATIONS.md §7. |
+| Runtime prompt config file | Prompts are in `ai/prompts.py` module, not a hot-reloadable config file. Documented in DEVIATIONS.md §8. |
+
+See [`DEVIATIONS.md`](DEVIATIONS.md) for the full deviation report (what changed from A1 design, why, and whether each is an improvement or compromise).
 
 ---
 
