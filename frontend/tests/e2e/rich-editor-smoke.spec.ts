@@ -22,6 +22,10 @@ test('auth, rich sync, and AI rewrite work end to end', async ({ browser, page }
   await page.keyboard.press('End')
   await page.keyboard.type(` ${syncMarker}`)
 
+  // Wait for auto-save to persist the content (2s debounce + network round trip).
+  // This ensures the REST backend has the typed text before page 2 loads it.
+  await expect(page.locator('text=Saved')).toBeVisible({ timeout: 15_000 })
+
   // Second page — same auth context, same user, same document list
   const context = page.context()
   const secondPage = await context.newPage()
@@ -35,7 +39,8 @@ test('auth, rich sync, and AI rewrite work end to end', async ({ browser, page }
 
   const secondEditor = secondPage.locator('.ProseMirror').first()
   await expect(secondEditor).toBeVisible()
-  await expect(secondEditor).toContainText(syncMarker)
+  // Give Yjs time to sync — REST content is seeded, collab server sends delta
+  await expect(secondEditor).toContainText(syncMarker, { timeout: 15_000 })
 
   // AI rewrite
   await editor.click()

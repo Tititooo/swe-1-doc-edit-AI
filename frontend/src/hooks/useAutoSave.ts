@@ -54,9 +54,12 @@ export const useAutoSave = ({
   useEffect(() => {
     clearTimer()
     saveInFlightRef.current = false
-    lastSavedContentRef.current = document?.content || ''
+    // Read content through the ref so this effect only resets on doc ID change,
+    // not on every keystroke (adding document?.content to deps would cause the
+    // "last saved" baseline to update on every character, defeating dirty detection).
+    lastSavedContentRef.current = currentDocumentRef.current?.content || ''
     setSaveStatus('idle')
-  }, [clearTimer, document?.id, document?.content])
+  }, [clearTimer, document?.id])
 
   useEffect(() => {
     if (!document || !enabled || role === 'viewer' || role === 'commenter') {
