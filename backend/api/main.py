@@ -365,7 +365,9 @@ def create_app() -> FastAPI:
         )
         ws_url = f"{settings.collab_ws_url.rstrip('/')}/doc/{payload.doc_id}"
         ws_url = f"{ws_url}?token={doc_token}"
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=600)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=settings.realtime_token_ttl_seconds
+        )
         palette = ["#0f766e", "#1d4ed8", "#7c3aed", "#be123c", "#a16207", "#4338ca"]
         color = palette[sum(ord(char) for char in user.id) % len(palette)]
         return RealtimeSessionResponse(

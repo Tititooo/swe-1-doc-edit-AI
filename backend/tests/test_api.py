@@ -43,6 +43,20 @@ class FakeAIService:
         return suggestion_id == "suggestion-123"
 
 
+class _MidStreamFailingAIService(FakeAIService):
+    """Yields one token, then raises GroqClientError. Used to prove the
+    stream_feature handler catches provider failures mid-iterator and emits
+    the documented SSE error envelope (`event: error`, `code:
+    AI_SERVICE_UNAVAILABLE`) instead of hard-closing the connection."""
+
+    async def stream_feature(self, feature: str, selected_text: str, **kwargs):
+        async def iterator():
+            yield "partial"
+            raise GroqClientError("upstream groq timed out")
+
+        return SuggestionHandle("suggestion-mid-error", feature, asyncio.Event()), iterator()
+
+
 def create_test_client(monkeypatch, *, auth_required: bool = False) -> TestClient:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("AI_REQUIRE_AUTH", "true" if auth_required else "false")
@@ -417,22 +431,6 @@ def test_admin_can_update_ai_settings(monkeypatch):
     assert blocked.json()["code"] == "INSUFFICIENT_PERMISSION"
 
 
-class _MidStreamFailingAIService(FakeAIService):
-    """FakeAIService variant that yields one token then raises GroqClientError.
-
-    Used to verify stream_feature catches provider failures mid-iterator and
-    emits the documented SSE error envelope instead of hard-closing the
-    connection.
-    """
-
-    async def stream_feature(self, feature: str, selected_text: str, **kwargs):
-        async def iterator():
-            yield "partial"
-            raise GroqClientError("upstream groq timed out")
-
-        return SuggestionHandle("suggestion-mid-error", feature, asyncio.Event()), iterator()
-
-
 def test_ai_stream_emits_error_event_on_groq_failure(monkeypatch):
     client = create_test_client(monkeypatch, auth_required=True)
     client.app.state.ai_service = _MidStreamFailingAIService()
@@ -480,6 +478,10 @@ def test_realtime_session_requires_doc_role(monkeypatch):
         json={"doc_id": "00000000-0000-0000-0000-dead000beef0"},
         headers=headers,
     )
+    # `require_document_role` returns 404 DOCUMENT_NOT_FOUND whenever the
+    # caller has no role on the doc — the existence vs permission distinction
+    # is intentionally hidden (don't leak doc-id enumeration). So the same
+    # code covers both "doc does not exist" and "user has no access".
     assert forbidden.status_code == 404
     assert forbidden.json()["code"] == "DOCUMENT_NOT_FOUND"
 

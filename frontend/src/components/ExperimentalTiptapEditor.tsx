@@ -115,21 +115,14 @@ export const ExperimentalTiptapEditor = ({
   // from===to just before the AI request starts).
   const [stickySelection, setStickySelection] = useState<TextSelection | null>(null)
   const [realtimeContext, setRealtimeContext] = useState<RealtimeEditorContext | null>(null)
-  const [acceptingPreview, setAcceptingPreview] = useState(false)
-  // True once the user has clicked Accept for the current response. Stays
-  // true until a new AI request starts (signaled by aiResponse transitioning
-  // to the empty string in useAI's requestRewrite). Without this flag a
-  // post-accept `restoreResponse` — which App.tsx calls when updateDocument
-  // fails — would re-reveal the preview overlay and break the CI smoke test.
-  const [acceptedCurrentResponse, setAcceptedCurrentResponse] = useState(false)
-  // Once we have an AI response, show the preview unconditionally. We used to
-  // also require `!!selection`, but the editor now persists across preview
-  // toggles (so Ctrl+Z can undo an accept) — which means clicking the AI
-  // sidebar button blurs the editor and clears the selection *before* the
-  // response arrives. The selection range we need for apply is captured in
-  // selectionRangeRef at selection time, so losing the React selection state
-  // mid-flow is fine.
-  const hasPreview = !!aiResponse && !acceptingPreview && !acceptedCurrentResponse
+  // Preview lifecycle as an explicit state machine:
+  //   'idle'       — no active AI response (fresh load, or after dismiss).
+  //   'streaming'  — tokens are accumulating in aiResponse, show the preview.
+  //   'accepting'  — user clicked Accept; overlay must hide until a new run.
+  // The previous implementation split this across two booleans which made
+  // the "don't re-show after a restoreResponse" guard implicit and brittle.
+  const [previewStage, setPreviewStage] = useState<'idle' | 'streaming' | 'accepting'>('idle')
+  const hasPreview = !!aiResponse && previewStage === 'streaming'
 
   useEffect(() => {
     if (!documentId || !sessionQuery.data) {
@@ -308,17 +301,28 @@ export const ExperimentalTiptapEditor = ({
   )
 
   useEffect(() => {
-    // Reset the in-flight accept state only when a new AI request starts.
-    // useAI's requestRewrite sets aiResponse to '' before tokens arrive —
-    // that's our "fresh request" signal. Going to null instead means
-    // dismissResponse() just fired from the Accept path; keep the
-    // accept-guard in place so a later restoreResponse on update failure
-    // can't re-reveal the preview overlay.
+    // Transition the preview stage based on aiResponse state:
+    //   null          — editor is in its resting state, nothing in-flight.
+    //                   Keep `accepting` sticky here so a post-accept
+    //                   restoreResponse() (fired by App.tsx when
+    //                   updateDocument errors) cannot re-open the preview.
+    //   ''            — useAI signals a fresh request starting; only here
+    //                   do we return to 'streaming' to show the next preview.
+    //   truthy + accepting — user just clicked Accept. Stay in 'accepting'
+    //                       regardless of subsequent aiResponse changes.
+    //   truthy + !accepting — tokens are still accumulating or new response
+    //                         arrived; move to 'streaming'.
     if (aiResponse === '') {
-      setAcceptingPreview(false)
-      setAcceptedCurrentResponse(false)
+      setPreviewStage('streaming')
       setStickySelection(null)
+      return
     }
+    if (aiResponse === null) {
+      // Don't clobber 'accepting' — we want to stay suppressed.
+      setPreviewStage((prev) => (prev === 'accepting' ? 'accepting' : 'idle'))
+      return
+    }
+    setPreviewStage((prev) => (prev === 'accepting' ? 'accepting' : 'streaming'))
   }, [aiResponse])
 
   const applyPreviewToEditor = async () => {
@@ -326,8 +330,11 @@ export const ExperimentalTiptapEditor = ({
       return
     }
 
-    setAcceptingPreview(true)
-    setAcceptedCurrentResponse(true)
+    // Transition to 'accepting' synchronously so the overlay hides on the
+    // next render. The stage stays here until a new AI request starts,
+    // which prevents App.tsx's restoreResponse() (on save failure) from
+    // re-opening the preview.
+    setPreviewStage('accepting')
 
     try {
       const previewMarkup = textToHtml(aiResponse)
@@ -349,7 +356,7 @@ export const ExperimentalTiptapEditor = ({
       await onAccept(editor.getText({ blockSeparator: '\n\n' }))
     } catch (error) {
       editor.commands.setContent(textToHtml(content), false)
-      setAcceptingPreview(false)
+      setPreviewStage('idle')
       throw error
     }
   }

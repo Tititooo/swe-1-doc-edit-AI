@@ -38,41 +38,10 @@ if (!JWT_SECRET) {
 }
 
 // -------------------------------------------------------------------
-// JWT verification (lightweight — no full FastAPI dependency)
-// We validate the access token on the WebSocket upgrade request.
-// If invalid, the connection is rejected before y-websocket touches it.
+// JWT verification — delegated to auth.js so it's unit-testable under
+// node:test without spinning up the WebSocket server.
 // -------------------------------------------------------------------
-const jwt = require('jsonwebtoken');
-
-/**
- * Extract and verify the JWT from the WebSocket upgrade request.
- * Clients must pass a doc-scoped token as a query parameter:
- *   wss://collab.example.com/doc/<uuid>?token=<doc_access_token>
- *
- * The token must have been minted by POST /api/realtime/session — it carries
- * a doc_id claim that must match the URL path, and type='doc_access'. A
- * generic access token (type='access') is NOT accepted here: that would
- * let a holder of any valid bearer connect to any document UUID, which is
- * what the A1 review flagged.
- *
- * @param {http.IncomingMessage} req
- * @param {string} expectedDocId  The docName parsed from /doc/<uuid>.
- * @returns {{ userId: string, role: string, docId: string } | null}
- */
-function verifyRequest(req, expectedDocId) {
-  try {
-    const url = new URL(req.url, `http://localhost`);
-    const token = url.searchParams.get('token');
-    if (!token) return null;
-
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    if (payload.type !== 'doc_access') return null;
-    if (!payload.doc_id || payload.doc_id !== expectedDocId) return null;
-    return { userId: payload.sub, role: payload.role, docId: payload.doc_id };
-  } catch {
-    return null;
-  }
-}
+const { verifyRequest } = require('./auth');
 
 // -------------------------------------------------------------------
 // HTTP server (y-websocket needs a plain http.Server)
@@ -134,7 +103,7 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const docName = pathMatch[1];
-  const user = verifyRequest(req, docName);
+  const user = verifyRequest(req, docName, JWT_SECRET);
 
   if (!user) {
     console.warn(`[server] Rejected WebSocket upgrade for doc=${docName} — invalid or wrong-doc token`);

@@ -37,6 +37,7 @@ class Settings:
     cors_origins: list[str]
     api_port: int
     collab_ws_url: str
+    realtime_token_ttl_seconds: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -60,4 +61,5 @@ class Settings:
             cors_origins=_split_csv(os.getenv("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173")),
             api_port=int(os.getenv("API_PORT", "4000")),
             collab_ws_url=os.getenv("COLLAB_WS_URL", "ws://127.0.0.1:1234"),
+            realtime_token_ttl_seconds=int(os.getenv("REALTIME_TOKEN_TTL_SECONDS", "600")),
         )
