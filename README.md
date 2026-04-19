@@ -19,12 +19,39 @@ A real-time collaborative document editing platform with an integrated AI writin
 
 ## Live Deployment (Render)
 
-| Service | Health Check |
-|---------|-------------|
-| Collab WebSocket Server | https://collab-editor-collab.onrender.com/health |
-| FastAPI Backend | https://collab-editor-backend-ghfl.onrender.com/health |
-
+| Service | URL |
+|---------|-----|
+| Static Frontend | https://collab-editor-frontend.onrender.com |
+| FastAPI Backend | https://collab-editor-backend-ghfl.onrender.com (`/health`) |
+| Collab WebSocket Server | https://collab-editor-collab.onrender.com (`/health`) |
+| PostgreSQL 16 | Managed database (no public URL — reachable from backend + collab services) |
 > Services on the Render free/starter tier may cold-start after inactivity. Allow ~30 seconds on first request.
+
+---
+
+## Demo Script (5 min)
+
+This walkthrough matches the grading rubric's required sequence (Assignment 2 §5). Every step uses the live Render deployment above. Two browser sessions are needed — open `https://collab-editor-frontend.onrender.com` in a regular window and an incognito window side by side.
+
+**0 · Warm the services (optional, ~30s before the clock).** Hit `https://collab-editor-backend-ghfl.onrender.com/health` and `https://collab-editor-collab.onrender.com/health` in a tab to kick the free-tier instances out of cold start. The demo flow assumes warm services.
+
+**1 · Auth & protected routes (~30s).** Open the frontend. Click *Register*, enter a fresh email + name + password. Submit. Show the editor loaded. Refresh the page — the Zustand-persisted tokens silently re-authenticate (no re-login prompt). Open DevTools → Network → inspect any `/api` call to show the `Authorization: Bearer <access>` header and the 15-minute `expiresIn`.
+
+**2 · Document create + rich-text + auto-save (~60s).** From the dashboard, click *New Document*. Title it "AI Demo". In the Tiptap editor type a heading, bold, italic, a bullet list, and a code block. The toolbar shows "Saving…" → "Saved" as the debounced auto-save fires (`PUT /api/documents/:id`). Call out the version bump in the Network tab.
+
+**3 · Sharing + role enforcement (~45s).** Open the *Share* panel. Invite the second session's email as `viewer`. In the incognito window log in as that second user, open the shared doc, and show the prominent "view-only" banner. Try to type — the editor refuses keystrokes. To prove this is server-side and not UI-only, `curl -X PUT` the document endpoint with the viewer's bearer → backend returns `403 INSUFFICIENT_PERMISSION`.
+
+**4 · Real-time collab + remote cursors (~45s).** Promote the second user to `editor`. Both windows now show the same doc side-by-side. Type in window A — characters stream to window B within ~200 ms (Yjs + y-websocket CRDT). Toggle to window B and move the cursor — window A renders a coloured caret plus the name label (Yjs Awareness, `CollaborationCursor` extension). This is the +2 cursor bonus.
+
+**5 · AI streaming, compare, accept, undo (~60s).** In window A, select a paragraph, open the AI Assistant sidebar. Choose **Rewrite** → watch tokens stream token-by-token into the "AI Suggestion" column of the new compare-card (§ TM1). Hit *Cancel* mid-stream to show abort works (backend `POST /api/ai/cancel/<id>`). Run rewrite again, let it finish, show the Original | AI Suggestion side-by-side, hit *Accept in Editor* → the change lands in the live doc. Press **Ctrl/Cmd-Z** → the Yjs undo manager (via `y-prosemirror` + Tiptap's Collaboration extension) reverts the accept cleanly (§ TM2). Then select another sentence, pick **Translate**, target language French, show the second AI feature streaming.
+
+**6 · Version history restore (~30s).** Open the Versions panel (`GET /api/documents/:id/versions`). Pick the snapshot taken before step 5's rewrites. Click *Restore* (`POST /api/documents/:id/revert/:version_id`). The editor content rolls back in both windows simultaneously — Yjs re-syncs from the restored snapshot.
+
+**7 · Failure mode (~15s, optional).** In window A, click *Rewrite* while the backend is deliberately offline (or trigger the mocked mid-stream error path covered by `frontend/tests/e2e/ai-error.spec.ts`). The red banner shows a friendly "AI is temporarily unavailable" message and the partial streamed output is preserved with a `[stream interrupted]` indicator (§ TM3, matches Assignment §3.2).
+
+### Demo assets
+- Backup recording: see `temiko_materials/` (local) or `docs/submission/video-script.md`.
+- Preview credentials for a quick run without registration: `atharv.dev@local` / `atharv-preview-pass` (seeded at backend startup; override via `DEV_BOOTSTRAP_EMAIL` / `DEV_BOOTSTRAP_PASSWORD`).
 
 ---
 
