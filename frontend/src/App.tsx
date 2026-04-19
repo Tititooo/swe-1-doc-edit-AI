@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { renameDocument, updateDocument } from './api/documentAPI'
+import { acceptShareLink, createShareLink, renameDocument, updateDocument } from './api/documentAPI'
 import { AISidebar } from './components/AISidebar'
 import { AuthPanel } from './components/AuthPanel'
 import { ConflictWarningBanner } from './components/ConflictWarningBanner'
@@ -187,6 +187,27 @@ function App() {
     void refreshHistory(document.id)
   }, [authRequired, document?.id, refreshHistory, user])
 
+  // Accept a share link token passed as ?share=<token> in the URL.
+  // Runs once after auth is ready and the user is logged in.
+  useEffect(() => {
+    if (!authReady || !user) return
+    const params = new URLSearchParams(window.location.search)
+    const shareToken = params.get('share')
+    if (!shareToken) return
+    // Strip the token from the URL bar without triggering navigation
+    const cleanUrl = window.location.pathname
+    window.history.replaceState({}, '', cleanUrl)
+    void (async () => {
+      try {
+        const result = await acceptShareLink(shareToken)
+        setLocalErrorMessage(`Joined "${result.docTitle}" as ${result.role}. Find it in your dashboard.`)
+        void refreshDocuments()
+      } catch {
+        setLocalErrorMessage('Share link is invalid or has expired.')
+      }
+    })()
+  }, [authReady, user, refreshDocuments])
+
   const handleOpenDocument = useCallback(
     async (documentItem: DocumentListItem) => {
       setLocalErrorMessage(null)
@@ -293,7 +314,7 @@ function App() {
   )
 
   const handleApplyRewrite = useCallback(
-    async (newText: string) => {
+    async (newText: string, isPartial = false) => {
       if (!document?.id || versionId === null) {
         setLocalErrorMessage('Open a document before applying an AI result.')
         return
@@ -318,7 +339,7 @@ function App() {
 
         syncDocument(updatedDocument)
         resetSaveState(updatedDocument)
-        await markSuggestion('accepted')
+        await markSuggestion(isPartial ? 'partial' : 'accepted')
         clearConflict()
         resetAI()
         setSelection(null)
@@ -472,6 +493,21 @@ function App() {
     await markSuggestion('rejected')
     resetAI()
   }, [markSuggestion, resetAI])
+
+  const handleGenerateShareLink = useCallback(
+    async (role: DocumentRole): Promise<string | null> => {
+      if (!document?.id) return null
+      try {
+        const result = await createShareLink(document.id, role)
+        return result.token
+      } catch (err) {
+        const apiError = err as APIError
+        setLocalErrorMessage(apiError.message || 'Failed to generate share link.')
+        return null
+      }
+    },
+    [document?.id]
+  )
 
   const handleLogout = useCallback(() => {
     logoutUser()
@@ -644,6 +680,7 @@ function App() {
       <DocumentUtilityPanel
         mode={panelMode}
         role={effectiveRole}
+        documentId={document?.id ?? null}
         permissions={permissions}
         versions={versions}
         currentVersionId={versionId}
@@ -657,6 +694,7 @@ function App() {
         onShare={handleShareDocument}
         onRevoke={handleRevokePermission}
         onRestore={handleRestoreVersion}
+        onGenerateShareLink={handleGenerateShareLink}
       />
     </div>
   )

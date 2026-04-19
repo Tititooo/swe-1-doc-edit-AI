@@ -843,6 +843,40 @@ class AppRuntime:
             raise KeyError(permission_id)
         return {"permission_id": str(row["id"]), "user_id": str(row["user_id"]), "role": row["role"]}
 
+    async def create_or_update_permission(self, doc_id: str, user_id: str, role: str) -> dict[str, Any]:
+        """Grant or update a permission directly (used by share-link accept; the JWT is the authority)."""
+        if self._pool is None:
+            permissions = self._memory_permissions.setdefault(doc_id, {})
+            existing = next((item for item in permissions.values() if item.user_id == user_id), None)
+            if existing is not None:
+                existing.role = role  # type: ignore[assignment]
+                return {"permission_id": existing.id, "user_id": user_id, "role": role}
+            permission = RuntimePermission(
+                id=str(uuid4()),
+                doc_id=doc_id,
+                user_id=user_id,
+                role=role,  # type: ignore[arg-type]
+                created_at=datetime.now(timezone.utc),
+            )
+            permissions[permission.id] = permission
+            return {"permission_id": permission.id, "user_id": user_id, "role": role}
+
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO permissions (doc_id, user_id, role)
+                VALUES ($1, $2, $3::permission_role)
+                ON CONFLICT (doc_id, user_id) DO UPDATE
+                SET role = EXCLUDED.role
+                RETURNING id, user_id, role::text AS role
+                """,
+                UUID(doc_id),
+                UUID(user_id),
+                role,
+            )
+        return {"permission_id": str(row["id"]), "user_id": str(row["user_id"]), "role": row["role"]}
+
     async def delete_permission(self, doc_id: str, permission_id: str, acting_user_id: str) -> None:
         acting_role = await self.get_document_role(doc_id, acting_user_id)
         if acting_role != "owner":

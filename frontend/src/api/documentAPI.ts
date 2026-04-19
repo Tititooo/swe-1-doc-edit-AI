@@ -275,6 +275,41 @@ export const revertDocumentVersion = async (
   }
 }
 
+export const createShareLink = async (
+  docId: string,
+  role: DocumentRole
+): Promise<{ token: string; role: DocumentRole; expiresInHours: number }> => {
+  try {
+    if (MOCK_MODE) {
+      return { token: `mock-share-${docId}-${role}`, role, expiresInHours: 72 }
+    }
+    const response = await apiClient.post<{ token: string; role: DocumentRole; expires_in_hours: number }>(
+      `/documents/${docId}/share-link`,
+      { role }
+    )
+    return { token: response.data.token, role: response.data.role, expiresInHours: response.data.expires_in_hours }
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
+export const acceptShareLink = async (
+  token: string
+): Promise<{ docId: string; role: DocumentRole; docTitle: string }> => {
+  try {
+    if (MOCK_MODE) {
+      return { docId: 'mock-doc', role: 'viewer', docTitle: 'Mock Document' }
+    }
+    const response = await apiClient.post<{ doc_id: string; role: DocumentRole; doc_title: string }>(
+      '/share/accept',
+      { token }
+    )
+    return { docId: response.data.doc_id, role: response.data.role, docTitle: response.data.doc_title }
+  } catch (error) {
+    throw handleAPIError(error)
+  }
+}
+
 export type { AIFeature }
 
 export const streamAIAction = async ({

@@ -187,3 +187,22 @@
     width: 100%;
   }
 }
+
+.share-link-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.share-link-result {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.share-link-input {
+  font-family: monospace;
+  font-size: 12px;
+  width: 100%;
+}

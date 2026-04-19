@@ -19,7 +19,7 @@ interface AISidebarProps {
   onCancel: () => Promise<void>
   onReject: () => Promise<void>
   onRewrite: (options: AIRequestOptions) => Promise<void>
-  onApply: (newText: string) => void
+  onApply: (newText: string, isPartial?: boolean) => void
   isApplyDisabled: boolean
 }
 
@@ -40,6 +40,7 @@ export const AISidebar = ({
   const [style, setStyle] = useState('polished')
   const [notes, setNotes] = useState('')
   const [targetLanguage, setTargetLanguage] = useState('English')
+  const [partialSelection, setPartialSelection] = useState<string>('')
 
   // Snapshot the selection at the moment the user kicked off the request so
   // the compare card's Original column stays stable even if the editor blurs
@@ -48,6 +49,7 @@ export const AISidebar = ({
   useEffect(() => {
     if (!aiResponse) {
       requestedOriginalRef.current = ''
+      setPartialSelection('')
     }
   }, [aiResponse])
 
@@ -158,8 +160,22 @@ export const AISidebar = ({
               </div>
             </div>
             <div className="compare-column compare-column-suggestion">
-              <div className="compare-column-header">AI Suggestion</div>
-              <div className="compare-column-body" data-testid="ai-compare-suggestion">
+              <div className="compare-column-header">
+                AI Suggestion
+                {!isLoading && <span className="compare-hint"> — select text to partially accept</span>}
+              </div>
+              <div
+                className="compare-column-body"
+                data-testid="ai-compare-suggestion"
+                onMouseUp={() => {
+                  const sel = window.getSelection()?.toString().trim()
+                  setPartialSelection(sel || '')
+                }}
+                onKeyUp={() => {
+                  const sel = window.getSelection()?.toString().trim()
+                  setPartialSelection(sel || '')
+                }}
+              >
                 {isLoading ? `${aiResponse}▌` : aiResponse}
               </div>
             </div>
@@ -229,7 +245,22 @@ export const AISidebar = ({
             disabled={isApplyDisabled || isLoading}
             data-testid="ai-apply"
           >
-            Apply
+            Apply All
+          </button>
+        )}
+
+        {aiResponse && partialSelection && (
+          <button
+            className="btn btn-apply"
+            onClick={() => {
+              setPartialSelection('')
+              window.getSelection()?.removeAllRanges()
+              onApply(partialSelection, true)
+            }}
+            disabled={isApplyDisabled || isLoading}
+            data-testid="ai-apply-partial"
+          >
+            Apply Selection
           </button>
         )}
 
