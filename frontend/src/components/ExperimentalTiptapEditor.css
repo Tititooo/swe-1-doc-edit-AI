@@ -89,3 +89,26 @@
   display: flex;
   gap: 10px;
 }
+
+/* The editor + preview share a positioned surface so the preview can overlay
+   the live editor without removing it from the layout. This keeps the
+   y-prosemirror undo stack alive across Accept — replacing the editor with
+   a different subtree destroyed it. */
+.rich-editor-surface {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rich-editor-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #ffffff;
+  padding: 0;
+  z-index: 2;
+}

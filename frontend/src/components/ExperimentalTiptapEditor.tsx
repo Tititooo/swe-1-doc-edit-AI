@@ -108,10 +108,22 @@ export const ExperimentalTiptapEditor = ({
   const sessionQuery = useRealtimeSession(documentId, !!documentId)
   const seededDocsRef = useRef<Set<string>>(new Set())
   const selectionRangeRef = useRef<EditorSelectionRange | null>(null)
+  const lastEmittedTextRef = useRef<string>('')
+  // Remembers the most recent non-empty selection so the preview card still
+  // reflects what the user highlighted even after the editor blurs (e.g. when
+  // they click the AI sidebar button, which fires onSelectionUpdate with
+  // from===to just before the AI request starts).
+  const [stickySelection, setStickySelection] = useState<TextSelection | null>(null)
   const [realtimeContext, setRealtimeContext] = useState<RealtimeEditorContext | null>(null)
   const [acceptingPreview, setAcceptingPreview] = useState(false)
-  const canShowPreview = activeFeature === 'continue' || !!selection
-  const hasPreview = !!aiResponse && !acceptingPreview && canShowPreview
+  // Once we have an AI response, show the preview unconditionally. We used to
+  // also require `!!selection`, but the editor now persists across preview
+  // toggles (so Ctrl+Z can undo an accept) — which means clicking the AI
+  // sidebar button blurs the editor and clears the selection *before* the
+  // response arrives. The selection range we need for apply is captured in
+  // selectionRangeRef at selection time, so losing the React selection state
+  // mid-flow is fine.
+  const hasPreview = !!aiResponse && !acceptingPreview
 
   useEffect(() => {
     if (!documentId || !sessionQuery.data) {
@@ -191,7 +203,15 @@ export const ExperimentalTiptapEditor = ({
       extensions,
       content: documentId ? '' : textToHtml(content),
       onUpdate: ({ editor: currentEditor }) => {
-        onChange(currentEditor.getText({ blockSeparator: '\n\n' }))
+        // Tiptap fires onUpdate on every dispatched transaction, including
+        // selection-only changes. Deduplicate so AI streaming (which causes
+        // React re-renders that bounce through here) doesn't repeatedly fire
+        // App.tsx's handleTextChange → resetAI() and wipe the in-flight
+        // suggestion.
+        const nextText = currentEditor.getText({ blockSeparator: '\n\n' })
+        if (nextText === lastEmittedTextRef.current) return
+        lastEmittedTextRef.current = nextText
+        onChange(nextText)
       },
       onSelectionUpdate: ({ editor: currentEditor }) => {
         const { from, to } = currentEditor.state.selection
@@ -204,15 +224,32 @@ export const ExperimentalTiptapEditor = ({
         selectionRangeRef.current = { from, to }
         const before = currentEditor.state.doc.textBetween(0, from, '\n\n', '\n')
         const selected = currentEditor.state.doc.textBetween(from, to, '\n\n', '\n')
-        onSelect({
+        const nextSelection: TextSelection = {
           start: before.length,
           end: before.length + selected.length,
           text: selected,
-        })
+        }
+        setStickySelection(nextSelection)
+        onSelect(nextSelection)
       },
     },
-    [realtimeContext?.key || 'local', disabled, hasPreview, sessionQuery.data?.role]
+    // hasPreview is intentionally NOT a dep: tearing down the editor when
+    // the preview flips drops the y-prosemirror undo stack, so Ctrl+Z after
+    // Accept would be dead. We sync `editable` in an effect below instead.
+    [realtimeContext?.key || 'local', disabled, sessionQuery.data?.role]
   )
+
+  useEffect(() => {
+    if (!editor) return
+    const nextEditable =
+      !disabled &&
+      !hasPreview &&
+      sessionQuery.data?.role !== 'viewer' &&
+      sessionQuery.data?.role !== 'commenter'
+    if (editor.isEditable !== nextEditable) {
+      editor.setEditable(nextEditable)
+    }
+  }, [disabled, editor, hasPreview, sessionQuery.data?.role])
 
   useEffect(() => {
     if (!editor || hasPreview) return
@@ -255,13 +292,22 @@ export const ExperimentalTiptapEditor = ({
     }
   }, [content, documentId, editor, hasPreview, realtimeContext])
 
+  // Preview rendering uses whichever selection is active right now, falling
+  // back to the last known selection so the preview doesn't lose its context
+  // when the editor blurs during the request.
+  const previewSelection = selection || stickySelection
   const previewHtml = useMemo(
-    () => buildPreviewHtml(content, selection, aiResponse, isStreaming),
-    [content, selection, aiResponse, isStreaming]
+    () => buildPreviewHtml(content, previewSelection, aiResponse, isStreaming),
+    [content, previewSelection, aiResponse, isStreaming]
   )
 
   useEffect(() => {
     setAcceptingPreview(false)
+    // When the AI response is fully dismissed, reset the sticky selection so
+    // the next request starts clean.
+    if (!aiResponse) {
+      setStickySelection(null)
+    }
   }, [aiResponse])
 
   const applyPreviewToEditor = async () => {
@@ -296,36 +342,6 @@ export const ExperimentalTiptapEditor = ({
     }
   }
 
-  if (hasPreview) {
-    return (
-      <div className="rich-editor-shell">
-      <div className="rich-editor-toolbar">
-        <span className="rich-editor-title">Rich Editor Preview</span>
-        <span className="rich-editor-mode">{activeFeature}</span>
-      </div>
-        <div
-          className="textarea-editor rich-preview-surface"
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
-          data-testid="rich-preview"
-        />
-        <div className="rich-editor-actions">
-          <button
-            className="btn btn-apply"
-            onClick={() => void applyPreviewToEditor()}
-            disabled={!aiResponse}
-            type="button"
-            data-testid="rich-preview-accept"
-          >
-            Accept in Editor
-          </button>
-          <button className="btn" onClick={onReject} type="button" data-testid="rich-preview-reject">
-            Reject Preview
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   if (!editor) return null
 
   const statusLabel = sessionQuery.data
@@ -341,12 +357,51 @@ export const ExperimentalTiptapEditor = ({
   return (
     <div className="rich-editor-shell">
       <div className="rich-editor-toolbar">
-        <span className="rich-editor-title">Rich Editor</span>
+        <span className="rich-editor-title">
+          {hasPreview ? 'Rich Editor Preview' : 'Rich Editor'}
+        </span>
         <span className={`rich-editor-mode ${sessionQuery.data ? 'rich-editor-mode-live' : ''}`}>
-          {statusLabel}
+          {hasPreview ? activeFeature : statusLabel}
         </span>
       </div>
-      <EditorContent editor={editor} className="textarea-editor rich-editor-content" data-testid="rich-editor" />
+
+      <div className="rich-editor-surface">
+        {/*
+          EditorContent is kept mounted during preview so y-prosemirror's
+          undo stack survives the accept. The preview overlays it absolutely
+          rather than replacing it (display:none would destroy layout and
+          made Playwright's toBeVisible assertions fail).
+        */}
+        <EditorContent
+          editor={editor}
+          className="textarea-editor rich-editor-content"
+          data-testid="rich-editor"
+        />
+
+        {hasPreview && (
+          <div className="rich-editor-preview-overlay">
+            <div
+              className="textarea-editor rich-preview-surface"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+              data-testid="rich-preview"
+            />
+            <div className="rich-editor-actions">
+              <button
+                className="btn btn-apply"
+                onClick={() => void applyPreviewToEditor()}
+                disabled={!aiResponse}
+                type="button"
+                data-testid="rich-preview-accept"
+              >
+                Accept in Editor
+              </button>
+              <button className="btn" onClick={onReject} type="button" data-testid="rich-preview-reject">
+                Reject Preview
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
