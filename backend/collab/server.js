@@ -46,20 +46,29 @@ const jwt = require('jsonwebtoken');
 
 /**
  * Extract and verify the JWT from the WebSocket upgrade request.
- * Clients must pass the token as a query parameter:
- *   wss://collab.example.com?token=<access_token>
+ * Clients must pass a doc-scoped token as a query parameter:
+ *   wss://collab.example.com/doc/<uuid>?token=<doc_access_token>
+ *
+ * The token must have been minted by POST /api/realtime/session — it carries
+ * a doc_id claim that must match the URL path, and type='doc_access'. A
+ * generic access token (type='access') is NOT accepted here: that would
+ * let a holder of any valid bearer connect to any document UUID, which is
+ * what the A1 review flagged.
  *
  * @param {http.IncomingMessage} req
- * @returns {{ userId: string, email: string } | null}
+ * @param {string} expectedDocId  The docName parsed from /doc/<uuid>.
+ * @returns {{ userId: string, role: string, docId: string } | null}
  */
-function verifyRequest(req) {
+function verifyRequest(req, expectedDocId) {
   try {
     const url = new URL(req.url, `http://localhost`);
     const token = url.searchParams.get('token');
     if (!token) return null;
 
     const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    return { userId: payload.sub, email: payload.email };
+    if (payload.type !== 'doc_access') return null;
+    if (!payload.doc_id || payload.doc_id !== expectedDocId) return null;
+    return { userId: payload.sub, role: payload.role, docId: payload.doc_id };
   } catch {
     return null;
   }
@@ -112,16 +121,8 @@ wss.on('connection', (ws, req, context) => {
 // WebSocket upgrade — authenticate before accepting the connection
 // -------------------------------------------------------------------
 server.on('upgrade', (req, socket, head) => {
-  const user = verifyRequest(req);
-
-  if (!user) {
-    console.warn('[server] Rejected unauthenticated WebSocket upgrade');
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  // Extract docName from the path: /doc/<uuid>
+  // Extract docName from the path first — the token must prove authorization
+  // for THIS specific document, not just any document the holder's JWT allows.
   const url = new URL(req.url, 'http://localhost');
   const pathMatch = url.pathname.match(/^\/doc\/([^/?]+)/);
 
@@ -133,6 +134,14 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const docName = pathMatch[1];
+  const user = verifyRequest(req, docName);
+
+  if (!user) {
+    console.warn(`[server] Rejected WebSocket upgrade for doc=${docName} — invalid or wrong-doc token`);
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, { docName, user });
