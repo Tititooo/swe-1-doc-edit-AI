@@ -543,6 +543,14 @@ def create_app() -> FastAPI:
         doc_id = claims["doc_id"]
         link_role = claims["role"]
 
+        # Defence-in-depth: token payload is trusted (signed with JWT_SECRET) but
+        # we never let a claim escalate beyond what share-link creation allows.
+        if link_role not in {"editor", "commenter", "viewer"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Invalid role in share link.", "code": "INVALID_REQUEST"},
+            )
+
         existing_role = await get_runtime(request).get_document_role(doc_id, user.id)
         # Never downgrade an existing privileged role via a share link
         role_rank = {"owner": 4, "editor": 3, "commenter": 2, "viewer": 1}

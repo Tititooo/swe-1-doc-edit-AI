@@ -41,6 +41,7 @@ export const AISidebar = ({
   const [notes, setNotes] = useState('')
   const [targetLanguage, setTargetLanguage] = useState('English')
   const [partialSelection, setPartialSelection] = useState<string>('')
+  const suggestionBodyRef = useRef<HTMLDivElement>(null)
 
   // Snapshot the selection at the moment the user kicked off the request so
   // the compare card's Original column stays stable even if the editor blurs
@@ -165,15 +166,26 @@ export const AISidebar = ({
                 {!isLoading && <span className="compare-hint"> — select text to partially accept</span>}
               </div>
               <div
+                ref={suggestionBodyRef}
                 className="compare-column-body"
                 data-testid="ai-compare-suggestion"
                 onMouseUp={() => {
-                  const sel = window.getSelection()?.toString().trim()
-                  setPartialSelection(sel || '')
+                  const sel = window.getSelection()
+                  const text = sel?.toString().trim()
+                  if (text && suggestionBodyRef.current?.contains(sel?.anchorNode ?? null)) {
+                    setPartialSelection(text)
+                  } else {
+                    setPartialSelection('')
+                  }
                 }}
                 onKeyUp={() => {
-                  const sel = window.getSelection()?.toString().trim()
-                  setPartialSelection(sel || '')
+                  const sel = window.getSelection()
+                  const text = sel?.toString().trim()
+                  if (text && suggestionBodyRef.current?.contains(sel?.anchorNode ?? null)) {
+                    setPartialSelection(text)
+                  } else {
+                    setPartialSelection('')
+                  }
                 }}
               >
                 {isLoading ? `${aiResponse}▌` : aiResponse}
