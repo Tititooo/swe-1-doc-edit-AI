@@ -264,6 +264,15 @@ export const ExperimentalTiptapEditor = ({
       return
     }
 
+    // When Yjs is active but not yet synced with the server, skip — the
+    // sync-guarded effect below will seed after sync completes. Seeding here
+    // before sync is the direct cause of doubled content: the REST content is
+    // inserted into the Y.Doc, then the collab server sends its CRDT state
+    // (same text, different clientId) which y-prosemirror merges additively.
+    if (realtimeContext && !realtimeContext.provider.synced) {
+      return
+    }
+
     const nextText = editor.getText({ blockSeparator: '\n\n' })
     if (nextText === content) {
       return
@@ -272,7 +281,7 @@ export const ExperimentalTiptapEditor = ({
     seededDocsRef.current.delete(documentId)
     lastEmittedTextRef.current = content
     editor.commands.setContent(textToHtml(content), false)
-  }, [content, documentId, editor, externalSyncToken, hasPreview])
+  }, [content, documentId, editor, externalSyncToken, hasPreview, realtimeContext])
 
   useEffect(() => {
     if (!editor || !realtimeContext || hasPreview || !documentId) {
