@@ -3,7 +3,7 @@
 Run through every item below **before the live demo clock starts**. Two browser windows (one regular, one incognito) and a terminal are all you need.
 
 URLs:
-- Frontend: https://collab-editor-frontend.onrender.com
+- Frontend: https://collab-editor-frontend-oxfx.onrender.com
 - Backend health: https://collab-editor-backend-ghfl.onrender.com/health
 - Collab health: https://collab-editor-collab.onrender.com/health
 
@@ -60,7 +60,7 @@ Open a second browser window (incognito) and register a second user `demo-bob@te
 - [ ] In Window B: press **↻ Refresh** on dashboard (or navigate back) → shared doc appears
 - [ ] In Window B: open the doc → **"View Only"** banner is visible
 - [ ] In Window B: try typing → keystrokes are blocked
-- [ ] **Server-side check**: `curl -X PUT https://collab-editor-backend-ghfl.onrender.com/api/documents/{id} -H "Authorization: Bearer {bob_token}" -H "Content-Type: application/json" -d '{"content":"hack","version_id":1}'` → should return `403 INSUFFICIENT_PERMISSION`
+- [ ] **Server-side check**: `curl -X PUT https://collab-editor-backend-ghfl.onrender.com/api/documents/{id} -H "Authorization: Bearer {bob_token}" -H "Content-Type: application/json" -d '{"content":"hack","versionId":1}'` → should return `403 INSUFFICIENT_PERMISSION`
 - [ ] In Window A: Share panel → change Bob from Viewer to **Editor** → confirm
 - [ ] In Window B: refresh → view-only banner disappears, can now type
 
@@ -142,6 +142,8 @@ Both windows on the same document as Editor/Owner:
 - [ ] **Markdown (.md)** → file downloads, content is readable markdown
 - [ ] **PDF** → file downloads, opens in PDF viewer, content visible
 - [ ] **Word (.docx)** → file downloads, opens in Word/LibreOffice
+
+> **API note:** the export query parameter accepts `format=md` (not `format=markdown`). The UI button already sends the correct value.
 
 ---
 

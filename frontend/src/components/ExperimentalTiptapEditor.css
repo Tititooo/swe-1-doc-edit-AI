@@ -63,6 +63,23 @@
   margin-bottom: 0;
 }
 
+.rich-editor-content .ProseMirror ul,
+.rich-editor-content .ProseMirror ol,
+.rich-preview-surface ul,
+.rich-preview-surface ol {
+  padding-left: 1.5em;
+}
+
+.rich-editor-content .ProseMirror ul,
+.rich-preview-surface ul {
+  list-style-type: disc;
+}
+
+.rich-editor-content .ProseMirror ol,
+.rich-preview-surface ol {
+  list-style-type: decimal;
+}
+
 .ai-inline-removed {
   color: #8f2d2d;
   text-decoration: line-through;

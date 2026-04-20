@@ -752,11 +752,8 @@ def create_app() -> FastAPI:
         return EventSourceResponse(event_generator())
 
     @app.post("/api/ai/rewrite")
-    async def rewrite(request: Request):
-        body = await request.json()
-
-        StreamingRewriteRequest.model_validate(body)
-        return await stream_feature("rewrite", body, request)
+    async def rewrite(request_body: StreamingRewriteRequest, request: Request):
+        return await stream_feature("rewrite", request_body.model_dump(), request)
 
     @app.post("/api/ai/summarize")
     async def summarize(request_body: SummarizeRequest, request: Request):
