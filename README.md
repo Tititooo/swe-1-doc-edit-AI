@@ -184,6 +184,8 @@ For the full C4 model and architectural decision records see [`docs/master_contr
 
 ## API Reference
 
+> **Interactive schema:** once the backend is running, the full OpenAPI 3 spec with request/response models and "Try it out" is available at `<backend-url>/docs` (locally: http://localhost:4000/docs; production: https://collab-editor-backend-ghfl.onrender.com/docs).
+
 <details>
 <summary><strong>Auth</strong></summary>
 
@@ -274,15 +276,18 @@ For the full C4 model and architectural decision records see [`docs/master_contr
 cp .env.example .env
 ```
 
-Fill in at minimum:
+Every variable in `.env.example` is commented with its purpose and defaults. For a minimum production-style run set these four:
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/collab_editor
 JWT_SECRET=<strong-random-secret>
 GROQ_API_KEY=<your-groq-key>
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/collab_editor
 COLLAB_SYSTEM_USER_ID=00000000-0000-0000-0000-000000000001
-COLLAB_WS_URL=ws://127.0.0.1:1234
 ```
+
+For a quick demo without Postgres or a Groq key, leave `DATABASE_URL` blank and set `AI_FAKE_MODE=true` — the backend runs fully in memory and the AI streams mocked tokens.
+
+The frontend has its own template at [`frontend/.env.example`](frontend/.env.example); all its variables are optional (see in-code fallbacks in `src/api/client.ts`).
 
 ### 2. Database
 
@@ -320,30 +325,34 @@ cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -r re
 
 ### 4. Run
 
-Open three terminals:
+One command starts all three services:
 
-**Backend API**
 ```bash
+./run.sh --install   # first time only — installs backend pip, collab npm, frontend npm deps
+./run.sh             # subsequent runs
+./run.sh --stop      # clean shutdown (also triggered by Ctrl+C)
+```
+
+The script sources `.env`, starts the FastAPI backend (`:4000`), the Node collab server (`:1234`), and Vite (`:5173`) in the background, writes PIDs to `.run.pids`, and tails logs into `.logs/`.
+
+<details>
+<summary>Or start each service manually in three terminals</summary>
+
+```bash
+# Terminal 1 — backend
 cd backend && . .venv/bin/activate
 uvicorn api.main:app --host 127.0.0.1 --port 4000
+
+# Terminal 2 — collab server
+cd backend/collab && npm run dev
+
+# Terminal 3 — frontend (all VITE_* envs are optional; see frontend/.env.example)
+cd frontend && npm run dev -- --host 127.0.0.1
 ```
 
-**Collab Server**
-```bash
-cd backend/collab
-npm run dev
-```
+Leaving `DATABASE_URL` unset starts the collab server in ephemeral mode — live sync works but snapshot persistence is disabled.
 
-> Leaving `DATABASE_URL` unset for the collab server starts it in ephemeral mode — live sync works but snapshot persistence is disabled.
-
-**Frontend**
-```bash
-cd frontend
-VITE_API_BASE_URL=http://127.0.0.1:4000/api \
-VITE_ENABLE_MOCK_API=false \
-VITE_DEV_AUTOLOGIN=true \
-npm run dev -- --host 127.0.0.1
-```
+</details>
 
 ### Preview credentials
 
