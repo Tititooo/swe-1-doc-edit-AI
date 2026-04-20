@@ -1,102 +1,96 @@
 # Architecture Deviations from Assignment 1 Design
 
-This file documents every deliberate difference between the Assignment 1 design and the final implementation. For each deviation, we state what changed, why, and whether the change is an improvement or a compromise.
+This file documents every deliberate difference between the Assignment 1 design (commit `db02491`) and the final Assignment 2 implementation on `main`. Silent agreement between A1 and A2, or A2 elaboration on topics A1 left open, are not listed — only choices where A1 committed to one design and A2 ships a materially different one. Each entry cites the A1 section and the A2 file paths that back the claim.
 
 ---
 
-## 1. Authentication: JWT-only (no Google OAuth)
+## 1. In-Memory Dual-Mode Runtime (no mandatory PostgreSQL)
 
-**A1 design:** The report described OAuth 2.0 via a Google provider integrated into FastAPI middleware, with the JWT issued downstream of the OAuth exchange.
+**A1 design:** The A1 C4 container diagram (`docs/master_contract/diagrams/c4-container.mmd`) and the report stack table (§1.1) list PostgreSQL as a mandatory container. The report's deployment narrative assumes Render's managed Postgres is always provisioned alongside the API.
 
-**Implementation:** Pure HS256 JWT issuance/validation using `PyJWT`, with bcrypt-hashed password storage. No OAuth dependency.
+**Implementation:** `AppRuntime` (`backend/api/runtime.py:60-100`) keeps parallel in-memory stores (`_memory_users_by_id`, `_memory_documents`, `_memory_permissions`, `_memory_ai_settings`) that mirror the PostgreSQL schema. The asyncpg pool is created only when `DATABASE_URL` is set; otherwise every REST route serves in-memory data. The collab server follows the same pattern: `backend/collab/persistence.js:17-38` computes `persistenceEnabled = Boolean(DATABASE_URL && SYSTEM_USER_ID)` and logs the mode at startup. Live Yjs sync still works when persistence is off; snapshotting is simply skipped.
 
-**Why:** Implementing a production Google OAuth flow requires redirect URIs, OAuth app credentials, and a running frontend on a stable domain — none of which are available in the Render free tier during development. JWT-only auth covers every rubric requirement (registration, login, 15-min access tokens, 7-day refresh tokens, session persistence, expiry handling) without that operational complexity.
+**Why:** Playwright, `pytest`, and local smoke runs need a working backend without Docker or a managed Postgres. Dual-mode keeps the test surface identical to production while removing the external dependency from CI. The Render Blueprint (`infra/render.yaml`) still provisions real Postgres for deployment.
 
-**Classification:** Improvement within scope — the rubric says "JWT-based authentication" explicitly. OAuth would be an additional layer on top, not a replacement.
-
----
-
-## 2. WebSocket Auth: Doc-Scoped Short-Lived Tokens (not generic bearer replay)
-
-**A1 design:** The A1 architecture described a single bearer access token used for both REST API and the WebSocket upgrade handshake. The token was passed as `?token=<access_token>` in the WebSocket URL.
-
-**Implementation:** `POST /api/realtime/session` now mints a *separate*, doc-scoped HS256 token (`type: "doc_access"`) bound to a specific `doc_id` and short-lived (10 min, configurable via `REALTIME_TOKEN_TTL_SECONDS`). The collab server (`auth.js::verifyRequest`) requires `payload.type === "doc_access"` AND `payload.doc_id === docName` parsed from the upgrade path, plus a valid signature. A generic bearer token is rejected.
-
-**Why:** The professor's A1 review explicitly flagged that the collab server validated JWTs but never re-checked document authorization — any holder of any valid JWT could connect to any document UUID. This closes that replay vulnerability. Factoring verification into `auth.js` (separate from `server.js`) also makes it unit-testable without spinning up the WebSocket server.
-
-**Classification:** Security improvement. Closes the A1 review deduction.
+**Classification:** Improvement. Strictly additive — production still runs on Postgres — and materially improves CI reliability and local DX.
 
 ---
 
-## 3. In-Memory Dual-Mode Runtime (no mandatory PostgreSQL)
+## 2. Version History: REST Text Projection Revert (not Yjs snapshot restore)
 
-**A1 design:** The architecture assumed PostgreSQL was always available as the persistence layer.
+**A1 design:** A1 US-04 states revert is "applied as a Yjs update; collaborators see the reverted state with their in-flight edits merged on top." The A1 data model (`docs/master_contract/diagrams/erd.mmd`) stores binary Yjs state in `document_versions`, implying revert would replay that CRDT state.
 
-**Implementation:** `AppRuntime` (`backend/api/runtime.py`) keeps parallel in-memory stores that mirror the PostgreSQL schema. When `DATABASE_URL` is unset, every route works against in-memory data — users, documents, permissions, AI interactions, version history — with zero external dependencies. The collab server runs in "ephemeral mode" (live sync works; snapshot persistence is disabled). The system logs which mode it starts in.
+**Implementation:** `POST /api/documents/:id/revert/:version_id` (`backend/api/main.py:418-435`) goes through `InMemoryDocumentStore.revert_document()` — the REST text projection path (`document_live_content` + `document_text_versions`), not the Yjs `document_versions` binary snapshot. The frontend re-seeds Tiptap via an `externalSyncToken` bump so connected peers resync from the new text.
 
-**Why:** This enables fully-local development and testing without Docker, makes CI/Playwright fast (no DB spin-up), and lets the test suite run in any environment. The Render deployment uses real PostgreSQL when `DATABASE_URL` is set.
+**Why:** A true Yjs snapshot restore requires an admin-scoped API on the y-websocket server to rewrite `Y.Doc` state for every connected peer, plus careful handling of in-flight updates. That surface was out of budget for A2. The REST path reuses the same optimistic-concurrency machinery as `PUT /api/documents/:id` and is sufficient for the demo-scale concurrency target (≤5 peers).
 
-**Classification:** Improvement — significantly better DX and CI reliability.
-
----
-
-## 4. AI Provider: Groq (not generic "LLM provider")
-
-**A1 design:** The report described an abstract AI provider interface with Groq listed as the concrete implementation.
-
-**Implementation:** Groq is the production AI provider (`ai/groq_client.py`), with `FakeAIService` for tests/CI. The `AIService` interface (`ai/service.py`) is the abstraction layer — swapping providers requires only a new `stream_feature` / `complete_feature` implementor and a change to `get_ai_service()` in `main.py`. Prompts are in `ai/prompts.py` (configurable, not hardcoded per-request).
-
-**Classification:** Matches A1 design. Documented here for completeness.
+**Classification:** Compromise. The restored document is correct, but collaborators briefly see a non-CRDT-merged replacement rather than a merged Yjs update.
 
 ---
 
-## 5. CRDT via Yjs (not custom OT)
+## 3. AI Suggestion UX: Sidebar Compare Card (not inline tracked-change proposal)
 
-**A1 design:** The report mentioned both OT and CRDTs as possible conflict-resolution strategies, with Yjs as the chosen library.
+**A1 design:** A1 FR-AI-01 / FR-AI-02 / FR-AI-03 and US-05 commit to AI output "rendered as an inline tracked-change proposal" with a "reviewable deletion and insertion diff inline" inside the Tiptap document, accepted or rejected in place.
 
-**Implementation:** Yjs CRDT through `y-websocket` on the Node collab server, with `@tiptap/extension-collaboration` on the frontend. Single-instance server (no Redis pub/sub). Snapshot persistence to PostgreSQL via `backend/collab/persistence.js`.
+**Implementation:** `frontend/src/components/AISidebar.tsx:149-196` renders a side-by-side "Compare" card (Original column vs. AI Suggestion column) in a right-hand panel. Acceptance is via an "Apply All" button (`AISidebar.tsx:253-262`) or an "Apply Selection" button that applies a user-highlighted sub-range of the suggestion text (`AISidebar.tsx:264-277`). There are no Tiptap decorations, no inline insertion/deletion marks, and no in-document accept/reject affordances.
 
-**Known limitation noted in A1:** Single-instance, no horizontal scaling. Upgrade path: Hocuspocus + Redis.
+**Why:** The A1 report body already hedged on this point, noting the PoC was "preview-first" and that the sidebar was the shipping surface. Building inline CRDT-aware diff marks on top of Tiptap + Yjs would require a custom Tiptap extension that produces proposal-state nodes which do not leak into the committed Y.Doc until accepted — a substantial piece of work that was cut from A2 scope. The sidebar still gives users partial-acceptance granularity via text selection.
 
-**Classification:** Matches A1 intent. The single-instance limitation was known and documented.
-
----
-
-## 6. Document Dashboard (not single-document editor)
-
-**A1 design:** The original design focused on the collaborative editor as the primary surface, with document management as a secondary concern.
-
-**Implementation:** A full `DocumentDashboard` component is the entry point after authentication. Users create and open documents from the dashboard. The workspace header shows save status, role, and document-level actions (Share, Version History, Export). This matches the A1 requirements for "dashboard listing documents the user has access to" (§1.2).
-
-**Classification:** Improvement — matches rubric requirements more completely than the earlier prototype.
+**Classification:** Compromise. Partial acceptance is preserved, but the in-document tracked-change experience A1 committed to is not shipped.
 
 ---
 
-## 7. Version History: REST Revert (not real-time Yjs state restore)
+## 4. Soft-Lock During AI Processing Not Enforced
 
-**A1 design:** Version history was planned as snapshots with revert capability.
+**A1 design:** A1 FR-AI-07 and ADR-003 ("Soft-Lock During AI Processing") commit to locking the target paragraph for the duration of the AI call with a five-second timeout release, so a second editor cannot overwrite the region while the suggestion is streaming.
 
-**Implementation:** The backend stores Yjs binary snapshots in `document_versions` via the collab server's persistence layer. Revert (`POST /api/documents/:id/revert/:version_id`) fetches the snapshot, re-inserts it as the latest content, and the editor syncs from the restored state. The frontend triggers a Yjs re-seed via `externalSyncToken` after revert.
+**Implementation:** No soft-lock is enforced in code. Neither the backend AI stream handler (`backend/api/main.py::stream_feature`) nor the Yjs collab server emits, tracks, or honours a per-paragraph lock. The Tiptap frontend has no awareness-level lock marker for in-flight AI targets. A concurrent editor can freely edit the paragraph that another user is rewriting.
 
-**Known limitation:** Revert is not a Yjs-native snapshot restore — it replaces document content via the REST `PUT` path, which may produce a brief CRDT divergence window before all peers sync. For the demo scale (≤5 concurrent users), this is acceptable.
+**Why:** The A1 report itself acknowledges the gap ("The stricter soft-lock policy remains documented, but it is not yet enforced end to end in the current code"). Implementing it correctly requires propagating lock state through Yjs awareness and reconciling it with the AI stream lifecycle, including cancellation and timeout paths. That work was descoped for A2.
 
-**Classification:** Partial implementation. Full Yjs snapshot restore would require a dedicated y-websocket admin API.
-
----
-
-## 8. AI Prompt Configuration: Module-Based (not config-file-based)
-
-**A1 design:** The report mentioned that "prompt templates must be configurable (config files or a prompt module)".
-
-**Implementation:** Prompts are in `backend/ai/prompts.py` as a Python module. Adding or modifying prompts requires a code change and redeploy, not a runtime config edit. Admin users can toggle per-role AI feature access via `PATCH /api/admin/ai-settings`.
-
-**Classification:** Compromise on the "config file" interpretation — but the prompts are centralized, not scattered across route handlers, and the module boundary enables clean provider swapping.
+**Classification:** Compromise. A committed ADR-level decision that is not shipped. Documented rather than silently dropped.
 
 ---
 
-## 9. PR Workflow as Evidence
+## 5. Share-by-Link Added (was "Won't Have")
 
-Per the professor's A1 feedback: "processes defined for version control should be followed and evidenced in the Git commit history." Every feature was delivered via a feature branch + PR with CI checks, not direct commits to `main`. Commit messages follow the Conventional Commits format. The PR history on GitHub shows the review process.
+**A1 design:** A1 report §1.2 MoSCoW explicitly lists "link-based document sharing" under "Won't Have (this project)". A1 sharing was scoped to direct per-email permission grants only.
+
+**Implementation:** `POST /api/documents/:id/share-link` and `POST /api/share/accept` (`backend/api/main.py:519-576`) mint and redeem stateless share-link JWTs (`backend/api/auth.py:96-127`, token `type: "share_link"`, 72-hour default TTL, `doc_id` and `role` encoded in the payload). The redemption endpoint upserts a `permissions` row for the caller at the encoded role. The frontend workspace header surfaces a "Copy share link" action.
+
+**Why:** Link sharing is the dominant sharing idiom for document tools and was the shortest path to onboarding collaborators in demo sessions without round-tripping through an admin add-user flow. Stateless JWTs avoided adding a new persisted-invite table.
+
+**Classification:** Improvement / scope expansion. Additive feature beyond the A1 commitment, gated by JWT signature and expiry.
+
+---
+
+## 6. AI Error Taxonomy: `AI_TIMEOUT` Collapsed into `AI_SERVICE_UNAVAILABLE`
+
+**A1 design:** A1 report §2.2.3 Error Codes enumerates `AI_TIMEOUT` / HTTP 504 as a distinct row from `AI_SERVICE_UNAVAILABLE` / HTTP 503, signalling that client timeouts against the Groq upstream should surface a dedicated code.
+
+**Implementation:** The backend emits only `AI_SERVICE_UNAVAILABLE` for both upstream failures and timeouts. `AI_TIMEOUT` is not produced anywhere in `backend/api/main.py` or `backend/ai/`. The frontend `src/api/client.ts` has no branch for `AI_TIMEOUT`.
+
+**Why:** From the client's perspective, both conditions resolve to the same retry prompt; splitting them added error-taxonomy surface without changing user-visible behaviour. The remaining codes in A1 §2.2.3 (`TOKEN_EXPIRED`, `INVALID_CREDENTIALS`, `ACCOUNT_EXISTS`, `DOCUMENT_NOT_FOUND`, `INSUFFICIENT_PERMISSION`, `VERSION_CONFLICT`, `INVALID_REQUEST`, `AI_QUOTA_EXCEEDED`) are preserved.
+
+**Classification:** Compromise. Minor — the contract is narrower than A1 specified, but no other error code was lost.
+
+---
+
+## 7. Soft-Delete Retention Gated by Restore Check (no scheduled purge)
+
+**A1 design:** A1 FR-DM-05 commits to soft deletion where the document "is hidden from all document listings but retained in storage and remains recoverable for a period of 30 days before permanent removal." The commitment has two halves: a 30-day restore window, and permanent removal after that window.
+
+**Implementation:** The 30-day window is enforced as a gate on the restore endpoint. `restore_document` (`backend/api/runtime.py:700-701` in-memory and `:719-720` Postgres) rejects restore when `now - deleted_at > 30 days`. There is no scheduled job, background task, or cron that actually deletes the row after 30 days — soft-deleted documents remain in the `documents` table indefinitely with `is_deleted = TRUE`.
+
+**Why:** A scheduled purge requires a durable task runner (cron on the API node, or a separate worker), plus cascading cleanup of `document_versions`, `document_live_content`, `document_text_versions`, `permissions`, and `ai_interactions`. That infrastructure was descoped for A2; gating restore gives users the A1-visible behaviour (restore fails after 30 days) without the purge plumbing.
+
+**Classification:** Compromise. The user-facing restore window matches A1, but the storage-lifecycle half of the commitment is not enforced.
+
+---
+
+## 8. PR Workflow as Evidence
+
+Per the A1 feedback that "processes defined for version control should be followed and evidenced in the Git commit history", every A2 feature was delivered via a feature branch plus pull request with CI checks, not direct commits to `main`. Commit messages follow Conventional Commits. The PR history on GitHub is the primary audit trail.
 
 ---
 
